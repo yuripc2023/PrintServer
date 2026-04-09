@@ -21,16 +21,47 @@ pip install -r requirements.txt
 3. Crear `.env` a partir de `.env.example` y completar:
 
 - `API_ORDERS_URL`: endpoint de consulta de pedidos.
+- `Company`: id de empresa a consultar.
+- `ORDER_STATUS`: estado a consultar. Por defecto `Registrado`.
 - `API_AUTH_MODE`: `basic`, `bearer`, `token` o `none`.
 - `API_USERNAME` y `API_PASSWORD`, o `API_TOKEN` segun el caso.
 - `API_PRINTED_URL_TEMPLATE`: endpoint real para marcar un detalle como impreso.
 - `PRINTER_MAP_JSON`: mapa de centros hacia el nombre exacto de la impresora instalada en Windows.
+
+Con eso la consulta queda asi:
+
+```text
+https://apisayri.atic.pe/api/orders/ordersales/?Company=10813&Status=Registrado
+```
 
 ## Ejecucion manual
 
 ```powershell
 python .\print_server.py
 ```
+
+Listar impresoras instaladas en Windows:
+
+```powershell
+python .\print_server.py --list-printers
+```
+
+Generar `PRINTER_MAP_JSON` en `.env` usando la primera impresora instalada para cada centro:
+
+```powershell
+python .\print_server.py --sync-printer-map --centers COCINA,BARRA,PARRILLAS
+```
+
+Luego puedes editar el valor generado si quieres asignar una impresora distinta a cada centro.
+
+Si la impresora no corta al final del ticket, configura el comando ESC/POS en `.env`:
+
+```env
+PRINT_CUT_ENABLED=true
+PRINT_CUT_COMMAND_HEX=1D5641
+```
+
+Algunos modelos usan `1D5600` en lugar de `1D5641`.
 
 ## Instalacion como servicio Windows
 

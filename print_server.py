@@ -1,6 +1,8 @@
+import argparse
 import json
 import logging
 import os
+import sys
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -19,6 +21,7 @@ SCRIPT_VERSION = "1.0.0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 LOG_FILE_PATH = os.path.join(BASE_DIR, "print_server.log")
+PRINT_CACHE_PATH = os.path.join(BASE_DIR, "printed_cache.json")
 SERVICE_STOP_EVENT = None
 
 
@@ -79,9 +82,125 @@ def normalize_center(value: Optional[str]) -> str:
     return (value or "SIN_CENTRO").strip().upper()
 
 
+def list_installed_printers() -> List[str]:
+    printer_flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+    printers = win32print.EnumPrinters(printer_flags)
+    names = sorted({printer[2] for printer in printers if len(printer) > 2 and printer[2]})
+    return names
+
+
+def parse_printer_centers(raw_value: str) -> List[str]:
+    return [normalize_center(item) for item in raw_value.split(",") if item.strip()]
+
+
+def update_env_value(file_path: str, key: str, value: str) -> None:
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"No se encontro el archivo {file_path}")
+
+    with open(file_path, "r", encoding="utf-8") as env_file:
+        lines = env_file.readlines()
+
+    replacement = f"{key}={value}\n"
+    key_prefix = f"{key}="
+    updated = False
+    for index, line in enumerate(lines):
+        if line.startswith(key_prefix):
+            lines[index] = replacement
+            updated = True
+            break
+
+    if not updated:
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] = lines[-1] + "\n"
+        lines.append(replacement)
+
+    with open(file_path, "w", encoding="utf-8") as env_file:
+        env_file.writelines(lines)
+
+
+def load_print_cache() -> Dict[str, float]:
+    if not os.path.exists(PRINT_CACHE_PATH):
+        return {}
+    try:
+        with open(PRINT_CACHE_PATH, "r", encoding="utf-8") as cache_file:
+            payload = json.load(cache_file)
+        if isinstance(payload, dict):
+            return {str(key): float(value) for key, value in payload.items()}
+    except (OSError, ValueError, TypeError):
+        logging.warning("No se pudo leer printed_cache.json. Se recreara.")
+    return {}
+
+
+def save_print_cache(cache: Dict[str, float]) -> None:
+    with open(PRINT_CACHE_PATH, "w", encoding="utf-8") as cache_file:
+        json.dump(cache, cache_file, indent=2, sort_keys=True)
+
+
+def cache_detail_printed(cache: Dict[str, float], detail_id: Any) -> None:
+    cache[str(detail_id)] = time.time()
+
+
+def uncache_detail_printed(cache: Dict[str, float], detail_id: Any) -> None:
+    cache.pop(str(detail_id), None)
+
+
+def is_detail_cached(cache: Dict[str, float], detail_id: Any) -> bool:
+    return str(detail_id) in cache
+
+
+def generate_printer_map(centers: List[str]) -> Dict[str, str]:
+    printers = list_installed_printers()
+    if not printers:
+        raise RuntimeError("No se encontraron impresoras instaladas en Windows")
+
+    default_printer = printers[0]
+    return {center: default_printer for center in centers}
+
+
+def handle_cli(argv: List[str]) -> bool:
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--list-printers", action="store_true", help="Lista las impresoras instaladas en Windows")
+    parser.add_argument(
+        "--sync-printer-map",
+        action="store_true",
+        help="Actualiza PRINTER_MAP_JSON en .env usando las impresoras instaladas",
+    )
+    parser.add_argument(
+        "--centers",
+        default="COCINA,BARRA,PARRILLAS",
+        help="Centros separados por coma para generar PRINTER_MAP_JSON",
+    )
+    args = parser.parse_args(argv)
+
+    if args.list_printers:
+        printers = list_installed_printers()
+        if not printers:
+            print("No se encontraron impresoras instaladas.")
+            return True
+        print("Impresoras instaladas:")
+        for printer_name in printers:
+            print(f"- {printer_name}")
+        return True
+
+    if args.sync_printer_map:
+        centers = parse_printer_centers(args.centers)
+        if not centers:
+            raise ValueError("Debes indicar al menos un centro en --centers")
+        printer_map = generate_printer_map(centers)
+        json_value = json.dumps(printer_map, ensure_ascii=False, separators=(",", ":"))
+        update_env_value(ENV_PATH, "PRINTER_MAP_JSON", json_value)
+        print("PRINTER_MAP_JSON actualizado en .env")
+        print(json_value)
+        return True
+
+    return False
+
+
 class Config:
     def __init__(self) -> None:
         self.orders_url = env_required("API_ORDERS_URL")
+        self.company = os.getenv("Company", "").strip()
+        self.order_status = os.getenv("ORDER_STATUS", "Registrado").strip()
         self.auth_mode = os.getenv("API_AUTH_MODE", "basic").strip().lower()
         self.username = os.getenv("API_USERNAME", "").strip()
         self.password = os.getenv("API_PASSWORD", "").strip()
@@ -103,6 +222,8 @@ class Config:
         self.print_encoding = os.getenv("PRINT_ENCODING", "cp850")
         self.document_title = os.getenv("PRINT_DOCUMENT_TITLE", "TicketProduccion")
         self.cut_lines = int(os.getenv("PRINT_FEED_LINES", "4"))
+        self.cut_enabled = os.getenv("PRINT_CUT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+        self.cut_command_hex = os.getenv("PRINT_CUT_COMMAND_HEX", "1D5641")
         self.verify_tls = os.getenv("API_VERIFY_TLS", "true").strip().lower() not in {"0", "false", "no"}
 
         self.printed_url_template = env_required("API_PRINTED_URL_TEMPLATE")
@@ -115,6 +236,14 @@ class Config:
             raise ValueError("API_TOKEN es obligatoria para API_AUTH_MODE=bearer/token")
         if not self.printer_map:
             raise ValueError("PRINTER_MAP_JSON es obligatorio y debe mapear centros a impresoras")
+
+    def build_orders_query_params(self) -> Dict[str, Any]:
+        params = dict(self.query_params)
+        if self.company:
+            params["Company"] = self.company
+        if self.order_status:
+            params["Status"] = self.order_status
+        return params
 
 
 class OrderApiClient:
@@ -135,7 +264,7 @@ class OrderApiClient:
     def get_pending_orders(self) -> List[Dict[str, Any]]:
         response = self.session.get(
             self.config.orders_url,
-            params=self.config.query_params,
+            params=self.config.build_orders_query_params(),
             timeout=self.config.timeout,
             verify=self.config.verify_tls,
         )
@@ -206,6 +335,7 @@ class TicketPrinter:
 
         document = self._build_document(order, center, list(details))
         raw_bytes = document.encode(self.config.print_encoding, errors="replace")
+        cut_bytes = self._build_cut_bytes()
 
         logging.info("Enviando pedido %s al centro %s en impresora '%s'", order.get("id"), center, printer_name)
         printer_handle = win32print.OpenPrinter(printer_name)
@@ -215,6 +345,8 @@ class TicketPrinter:
                 try:
                     win32print.StartPagePrinter(printer_handle)
                     win32print.WritePrinter(printer_handle, raw_bytes)
+                    if cut_bytes:
+                        win32print.WritePrinter(printer_handle, cut_bytes)
                     win32print.EndPagePrinter(printer_handle)
                     logging.info(
                         "Trabajo de impresion generado. Pedido=%s Centro=%s Copia=%s JobId=%s",
@@ -227,6 +359,14 @@ class TicketPrinter:
                     win32print.EndDocPrinter(printer_handle)
         finally:
             win32print.ClosePrinter(printer_handle)
+
+    def _build_cut_bytes(self) -> bytes:
+        if not self.config.cut_enabled:
+            return b""
+        try:
+            return bytes.fromhex(self.config.cut_command_hex)
+        except ValueError as exc:
+            raise ValueError("PRINT_CUT_COMMAND_HEX debe ser una cadena hexadecimal valida") from exc
 
     def _build_document(self, order: Dict[str, Any], center: str, details: List[Dict[str, Any]]) -> str:
         order_id = order.get("id", "")
@@ -295,6 +435,50 @@ def group_pending_details(order: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
     return grouped
 
 
+def split_order_details(
+    order: Dict[str, Any], print_cache: Dict[str, float]
+) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, Any]]]:
+    grouped_to_print: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    pending_confirmation: List[Dict[str, Any]] = []
+
+    for detail in order.get("Details") or []:
+        if bool(detail.get("Printed")):
+            continue
+
+        if is_detail_cached(print_cache, detail.get("id")):
+            pending_confirmation.append(detail)
+            continue
+
+        center = normalize_center(detail.get("ProductionCenter"))
+        grouped_to_print[center].append(detail)
+
+    return grouped_to_print, pending_confirmation
+
+
+def try_mark_detail(
+    client: OrderApiClient, order: Dict[str, Any], detail: Dict[str, Any], print_cache: Dict[str, float]
+) -> bool:
+    try:
+        client.mark_detail_as_printed(order, detail)
+        uncache_detail_printed(print_cache, detail.get("id"))
+        logging.info(
+            "Detalle marcado como impreso. Pedido=%s Detalle=%s Centro=%s",
+            order.get("id"),
+            detail.get("id"),
+            normalize_center(detail.get("ProductionCenter")),
+        )
+        return True
+    except Exception as exc:
+        logging.error(
+            "No se pudo marcar como impreso. Pedido=%s Detalle=%s Error=%s",
+            order.get("id"),
+            detail.get("id"),
+            exc,
+            exc_info=True,
+        )
+        return False
+
+
 def wait_for_next_cycle(seconds: int) -> bool:
     if SERVICE_STOP_EVENT:
         wait_result = win32event.WaitForSingleObject(SERVICE_STOP_EVENT, max(seconds, 1) * 1000)
@@ -303,8 +487,9 @@ def wait_for_next_cycle(seconds: int) -> bool:
     return False
 
 
-def run_cycle(client: OrderApiClient, printer: TicketPrinter) -> Tuple[int, int]:
+def run_cycle(client: OrderApiClient, printer: TicketPrinter, print_cache: Dict[str, float]) -> Tuple[int, int]:
     printed_count = 0
+    confirmed_count = 0
     orders = client.get_pending_orders()
     if not orders:
         logging.info("No hay pedidos pendientes por imprimir.")
@@ -313,22 +498,28 @@ def run_cycle(client: OrderApiClient, printer: TicketPrinter) -> Tuple[int, int]
     logging.info("Se encontraron %s pedido(s) con detalles pendientes.", len(orders))
     for order in orders:
         order_id = order.get("id")
-        grouped = group_pending_details(order)
-        if not grouped:
-            continue
-
-        logging.info("Procesando pedido %s en %s centro(s).", order_id, len(grouped))
+        grouped, pending_confirmation = split_order_details(order, print_cache)
+        if grouped:
+            logging.info("Procesando pedido %s en %s centro(s).", order_id, len(grouped))
         for center, details in grouped.items():
             printer.print_order_group(order, center, details)
             for detail in details:
-                client.mark_detail_as_printed(order, detail)
+                cache_detail_printed(print_cache, detail.get("id"))
                 printed_count += 1
-                logging.info(
-                    "Detalle marcado como impreso. Pedido=%s Detalle=%s Centro=%s",
-                    order_id,
-                    detail.get("id"),
-                    center,
-                )
+                if try_mark_detail(client, order, detail, print_cache):
+                    confirmed_count += 1
+
+        for detail in pending_confirmation:
+            if try_mark_detail(client, order, detail, print_cache):
+                confirmed_count += 1
+
+    save_print_cache(print_cache)
+    logging.info(
+        "Estado del ciclo. Detalles impresos=%s Detalles confirmados en API=%s Pendientes locales=%s",
+        printed_count,
+        confirmed_count,
+        len(print_cache),
+    )
     return len(orders), printed_count
 
 
@@ -338,6 +529,7 @@ def main() -> None:
     config = Config()
     client = OrderApiClient(config)
     printer = TicketPrinter(config)
+    print_cache = load_print_cache()
 
     logging.info("ATIC Peru")
     logging.info("Iniciando print_server.py version %s", SCRIPT_VERSION)
@@ -345,7 +537,7 @@ def main() -> None:
 
     while True:
         try:
-            orders_count, printed_count = run_cycle(client, printer)
+            orders_count, printed_count = run_cycle(client, printer, print_cache)
             sleep_seconds = config.idle_sleep_seconds if printed_count == 0 else config.poll_seconds
             logging.info(
                 "Ciclo finalizado. Pedidos=%s Detalles impresos=%s Proxima consulta en %s segundo(s).",
@@ -363,4 +555,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if handle_cli(sys.argv[1:]):
+        sys.exit(0)
     main()
