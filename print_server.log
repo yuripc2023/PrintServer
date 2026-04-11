@@ -1,28 +1,17 @@
-2026-04-09 14:44:36,753 - INFO - ATIC Peru
-2026-04-09 14:44:36,753 - INFO - Iniciando print_server.py version 1.0.0
-2026-04-09 14:44:36,753 - INFO - Consulta configurada cada 10 segundo(s).
-2026-04-09 14:44:37,632 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
-2026-04-09 14:44:37,747 - ERROR - No se pudo marcar como impreso. Pedido=5870 Detalle=25505 Error=404 Client Error: Not Found for url: https://apisayri.atic.pe/api/orders/ordersaledetails/25505/
-Traceback (most recent call last):
-  File "C:\Script\PrintServer\print_server.py", line 462, in try_mark_detail
-    client.mark_detail_as_printed(order, detail)
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-  File "C:\Script\PrintServer\print_server.py", line 287, in mark_detail_as_printed
-    response.raise_for_status()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "C:\Users\Yuri\AppData\Local\Programs\Python\Python313\Lib\site-packages\requests\models.py", line 1026, in raise_for_status
-    raise HTTPError(http_error_msg, response=self)
-requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://apisayri.atic.pe/api/orders/ordersaledetails/25505/
-2026-04-09 14:44:37,862 - ERROR - No se pudo marcar como impreso. Pedido=5870 Detalle=25506 Error=404 Client Error: Not Found for url: https://apisayri.atic.pe/api/orders/ordersaledetails/25506/
-Traceback (most recent call last):
-  File "C:\Script\PrintServer\print_server.py", line 462, in try_mark_detail
-    client.mark_detail_as_printed(order, detail)
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-  File "C:\Script\PrintServer\print_server.py", line 287, in mark_detail_as_printed
-    response.raise_for_status()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "C:\Users\Yuri\AppData\Local\Programs\Python\Python313\Lib\site-packages\requests\models.py", line 1026, in raise_for_status
-    raise HTTPError(http_error_msg, response=self)
-requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://apisayri.atic.pe/api/orders/ordersaledetails/25506/
-2026-04-09 14:44:37,864 - INFO - Estado del ciclo. Detalles impresos=0 Detalles confirmados en API=0 Pendientes locales=49
-2026-04-09 14:44:37,865 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=0 Proxima consulta en 10 segundo(s).
+2026-04-11 11:33:16,731 - INFO - ATIC Peru
+2026-04-11 11:33:16,731 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:33:16,731 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:33:17,617 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:33:17,617 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:33:17,618 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:33:17,618 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:33:17,618 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:33:17,618 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:33:17,620 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:33:17,653 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=84
+2026-04-11 11:33:18,068 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:33:18,090 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=85
+2026-04-11 11:33:18,502 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:33:18,520 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=86
+2026-04-11 11:33:18,935 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:33:18,935 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).

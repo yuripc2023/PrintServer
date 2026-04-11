@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import json
 import logging
 import os
@@ -23,6 +23,7 @@ ENV_PATH = os.path.join(BASE_DIR, ".env")
 LOG_FILE_PATH = os.path.join(BASE_DIR, "print_server.log")
 PRINT_CACHE_PATH = os.path.join(BASE_DIR, "printed_cache.json")
 SERVICE_STOP_EVENT = None
+TICKET_WIDTH = 40
 
 
 def load_environment() -> None:
@@ -76,6 +77,21 @@ def parse_json_env(name: str, default: Any) -> Any:
         return json.loads(raw_value)
     except json.JSONDecodeError as exc:
         raise ValueError(f"La variable {name} debe contener JSON valido") from exc
+
+
+def parse_hex_commands(raw_value: str, env_name: str) -> bytes:
+    value = raw_value.strip()
+    if not value:
+        return b""
+
+    command_parts = [part.strip().replace(" ", "") for part in value.split(",") if part.strip()]
+    payload = b""
+    for part in command_parts:
+        try:
+            payload += bytes.fromhex(part)
+        except ValueError as exc:
+            raise ValueError(f"{env_name} debe contener hexadecimal valido") from exc
+    return payload
 
 
 def normalize_center(value: Optional[str]) -> str:
@@ -224,6 +240,21 @@ class Config:
         self.cut_lines = int(os.getenv("PRINT_FEED_LINES", "4"))
         self.cut_enabled = os.getenv("PRINT_CUT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
         self.cut_command_hex = os.getenv("PRINT_CUT_COMMAND_HEX", "1D5641")
+        self.pre_cut_feed_lines = int(os.getenv("PRINT_PRE_CUT_FEED_LINES", "3"))
+        self.after_job_sleep_ms = int(os.getenv("PRINT_AFTER_JOB_SLEEP_MS", "300"))
+        self.combine_ticket_and_cut = os.getenv("PRINT_COMBINE_TICKET_AND_CUT", "true").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+        }
+        self.beep_enabled = os.getenv("PRINT_BEEP_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
+        self.beep_command_hex = os.getenv("PRINT_BEEP_COMMAND_HEX", "").strip()
+        self.beep_position = os.getenv("PRINT_BEEP_POSITION", "before_cut").strip().lower()
+        self.reprint_when_not_confirmed = os.getenv("REPRINT_WHEN_NOT_CONFIRMED", "true").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+        }
         self.verify_tls = os.getenv("API_VERIFY_TLS", "true").strip().lower() not in {"0", "false", "no"}
 
         self.printed_url_template = env_required("API_PRINTED_URL_TEMPLATE")
@@ -335,7 +366,9 @@ class TicketPrinter:
 
         document = self._build_document(order, center, list(details))
         raw_bytes = document.encode(self.config.print_encoding, errors="replace")
+        beep_bytes = self._build_beep_bytes()
         cut_bytes = self._build_cut_bytes()
+        payload_bytes = self._build_payload_bytes(raw_bytes, beep_bytes, cut_bytes)
 
         logging.info("Enviando pedido %s al centro %s en impresora '%s'", order.get("id"), center, printer_name)
         printer_handle = win32print.OpenPrinter(printer_name)
@@ -344,8 +377,8 @@ class TicketPrinter:
                 job_id = win32print.StartDocPrinter(printer_handle, 1, (self.config.document_title, None, "RAW"))
                 try:
                     win32print.StartPagePrinter(printer_handle)
-                    win32print.WritePrinter(printer_handle, raw_bytes)
-                    if cut_bytes:
+                    win32print.WritePrinter(printer_handle, payload_bytes)
+                    if cut_bytes and not self.config.combine_ticket_and_cut:
                         win32print.WritePrinter(printer_handle, cut_bytes)
                     win32print.EndPagePrinter(printer_handle)
                     logging.info(
@@ -357,35 +390,60 @@ class TicketPrinter:
                     )
                 finally:
                     win32print.EndDocPrinter(printer_handle)
+                    if self.config.after_job_sleep_ms > 0:
+                        time.sleep(self.config.after_job_sleep_ms / 1000)
         finally:
             win32print.ClosePrinter(printer_handle)
+
+    def _build_payload_bytes(self, raw_bytes: bytes, beep_bytes: bytes, cut_bytes: bytes) -> bytes:
+        if not self.config.combine_ticket_and_cut:
+            return raw_bytes
+
+        if self.config.beep_position == "before_ticket":
+            return beep_bytes + raw_bytes + cut_bytes
+        if self.config.beep_position == "after_ticket":
+            return raw_bytes + beep_bytes + cut_bytes
+        if self.config.beep_position == "after_cut":
+            return raw_bytes + cut_bytes + beep_bytes
+        return raw_bytes + beep_bytes + cut_bytes
+
+    def _build_beep_bytes(self) -> bytes:
+        if not self.config.beep_enabled:
+            return b""
+        if not self.config.beep_command_hex:
+            raise ValueError("PRINT_BEEP_COMMAND_HEX es obligatorio cuando PRINT_BEEP_ENABLED=true")
+        return parse_hex_commands(self.config.beep_command_hex, "PRINT_BEEP_COMMAND_HEX")
 
     def _build_cut_bytes(self) -> bytes:
         if not self.config.cut_enabled:
             return b""
-        try:
-            return bytes.fromhex(self.config.cut_command_hex)
-        except ValueError as exc:
-            raise ValueError("PRINT_CUT_COMMAND_HEX debe ser una cadena hexadecimal valida") from exc
+        pre_cut_feed = b"\n" * max(self.config.pre_cut_feed_lines, 0)
+        return pre_cut_feed + parse_hex_commands(self.config.cut_command_hex, "PRINT_CUT_COMMAND_HEX")
 
     def _build_document(self, order: Dict[str, Any], center: str, details: List[Dict[str, Any]]) -> str:
         order_id = order.get("id", "")
         order_number = f"{order.get('OrderSerie', '')}-{order.get('OrderNumber', '')}".strip("-")
         customer = order.get("ExternalPerson", "")
         cashier = order.get("Cashier") or order.get("InternalPerson") or ""
+        workspace = order.get("WorkSpace") or ""
+        space = order.get("Space") or ""
         observations = order.get("Observations") or ""
         created_at = order.get("Hour") or order.get("Created") or ""
         header_lines = [
-            "PEDIDO DE PRODUCCION",
-            f"CENTRO: {center}",
-            f"PEDIDO: {order_id}",
+            "=" * TICKET_WIDTH,
+            f"CENTRO DE PRODUCCION: {center}".center(TICKET_WIDTH),
+            "=" * TICKET_WIDTH,
             f"NUMERO: {order_number}",
             f"FECHA: {self._format_datetime(created_at)}",
         ]
         if cashier:
-            header_lines.append(f"CAJERO: {cashier}")
-        if customer:
-            header_lines.append(f"CLIENTE: {customer}")
+            header_lines.append(f"ASESOR: {cashier}")
+        if workspace or space:
+            header_lines.append("-" * TICKET_WIDTH)
+        if workspace:
+            header_lines.append(f"SALON: {workspace}")
+        if space:
+            header_lines.append(f"ESPACIO: {space}")
 
         item_lines = []
         for detail in details:
@@ -401,7 +459,7 @@ class TicketPrinter:
             footer_lines.append(f"OBS GENERAL: {observations}"[:120])
         footer_lines.append(f"ITEMS: {len(details)}")
 
-        lines = header_lines + ["-" * 40] + item_lines + ["-" * 40] + footer_lines
+        lines = header_lines + ["-" * TICKET_WIDTH] + item_lines + ["-" * TICKET_WIDTH] + footer_lines
         lines.extend([""] * self.config.cut_lines)
         return "\n".join(lines)
 
@@ -436,7 +494,7 @@ def group_pending_details(order: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
 
 
 def split_order_details(
-    order: Dict[str, Any], print_cache: Dict[str, float]
+    order: Dict[str, Any], print_cache: Dict[str, float], config: Config
 ) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, Any]]]:
     grouped_to_print: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     pending_confirmation: List[Dict[str, Any]] = []
@@ -445,7 +503,7 @@ def split_order_details(
         if bool(detail.get("Printed")):
             continue
 
-        if is_detail_cached(print_cache, detail.get("id")):
+        if not config.reprint_when_not_confirmed and is_detail_cached(print_cache, detail.get("id")):
             pending_confirmation.append(detail)
             continue
 
@@ -453,6 +511,30 @@ def split_order_details(
         grouped_to_print[center].append(detail)
 
     return grouped_to_print, pending_confirmation
+
+
+def log_order_detail_centers(order: Dict[str, Any], config: Config) -> None:
+    details = order.get("Details") or []
+    if not details:
+        logging.info("Pedido %s no contiene detalles.", order.get("id"))
+        return
+
+    summary: Dict[str, int] = defaultdict(int)
+    for detail in details:
+        center = normalize_center(detail.get("ProductionCenter"))
+        summary[center] += 1
+        printer_name = config.printer_map.get(center)
+        logging.info(
+            "Pedido=%s Detalle=%s Producto='%s' Centro='%s' Impresora='%s' PrintedApi=%s",
+            order.get("id"),
+            detail.get("id"),
+            detail.get("Product"),
+            center,
+            printer_name or "SIN_MAPEO",
+            detail.get("Printed"),
+        )
+
+    logging.info("Resumen de centros del pedido %s: %s", order.get("id"), dict(summary))
 
 
 def try_mark_detail(
@@ -469,13 +551,6 @@ def try_mark_detail(
         )
         return True
     except Exception as exc:
-        logging.error(
-            "No se pudo marcar como impreso. Pedido=%s Detalle=%s Error=%s",
-            order.get("id"),
-            detail.get("id"),
-            exc,
-            exc_info=True,
-        )
         return False
 
 
@@ -487,7 +562,9 @@ def wait_for_next_cycle(seconds: int) -> bool:
     return False
 
 
-def run_cycle(client: OrderApiClient, printer: TicketPrinter, print_cache: Dict[str, float]) -> Tuple[int, int]:
+def run_cycle(
+    client: OrderApiClient, printer: TicketPrinter, print_cache: Dict[str, float], config: Config
+) -> Tuple[int, int]:
     printed_count = 0
     confirmed_count = 0
     orders = client.get_pending_orders()
@@ -498,7 +575,8 @@ def run_cycle(client: OrderApiClient, printer: TicketPrinter, print_cache: Dict[
     logging.info("Se encontraron %s pedido(s) con detalles pendientes.", len(orders))
     for order in orders:
         order_id = order.get("id")
-        grouped, pending_confirmation = split_order_details(order, print_cache)
+        log_order_detail_centers(order, config)
+        grouped, pending_confirmation = split_order_details(order, print_cache, config)
         if grouped:
             logging.info("Procesando pedido %s en %s centro(s).", order_id, len(grouped))
         for center, details in grouped.items():
@@ -537,7 +615,7 @@ def main() -> None:
 
     while True:
         try:
-            orders_count, printed_count = run_cycle(client, printer, print_cache)
+            orders_count, printed_count = run_cycle(client, printer, print_cache, config)
             sleep_seconds = config.idle_sleep_seconds if printed_count == 0 else config.poll_seconds
             logging.info(
                 "Ciclo finalizado. Pedidos=%s Detalles impresos=%s Proxima consulta en %s segundo(s).",
