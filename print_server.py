@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import time
+import textwrap
 from collections import defaultdict
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
@@ -24,6 +25,8 @@ LOG_FILE_PATH = os.path.join(BASE_DIR, "print_server.log")
 PRINT_CACHE_PATH = os.path.join(BASE_DIR, "printed_cache.json")
 SERVICE_STOP_EVENT = None
 TICKET_WIDTH = 40
+QTY_COL_WIDTH = 8
+DESC_COL_WIDTH = TICKET_WIDTH - QTY_COL_WIDTH
 
 
 def load_environment() -> None:
@@ -238,6 +241,8 @@ class Config:
         self.print_encoding = os.getenv("PRINT_ENCODING", "cp850")
         self.document_title = os.getenv("PRINT_DOCUMENT_TITLE", "TicketProduccion")
         self.cut_lines = int(os.getenv("PRINT_FEED_LINES", "4"))
+        self.highlight_command_hex = os.getenv("PRINT_HIGHLIGHT_COMMAND_HEX", "1D2111").strip()
+        self.highlight_reset_command_hex = os.getenv("PRINT_HIGHLIGHT_RESET_COMMAND_HEX", "1D2100").strip()
         self.cut_enabled = os.getenv("PRINT_CUT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
         self.cut_command_hex = os.getenv("PRINT_CUT_COMMAND_HEX", "1D5641")
         self.pre_cut_feed_lines = int(os.getenv("PRINT_PRE_CUT_FEED_LINES", "3"))
@@ -364,8 +369,7 @@ class TicketPrinter:
         if not printer_name:
             raise ValueError(f"No hay impresora configurada para el centro '{center}'")
 
-        document = self._build_document(order, center, list(details))
-        raw_bytes = document.encode(self.config.print_encoding, errors="replace")
+        raw_bytes = self._build_document_bytes(order, center, list(details))
         beep_bytes = self._build_beep_bytes()
         cut_bytes = self._build_cut_bytes()
         payload_bytes = self._build_payload_bytes(raw_bytes, beep_bytes, cut_bytes)
@@ -420,7 +424,7 @@ class TicketPrinter:
         pre_cut_feed = b"\n" * max(self.config.pre_cut_feed_lines, 0)
         return pre_cut_feed + parse_hex_commands(self.config.cut_command_hex, "PRINT_CUT_COMMAND_HEX")
 
-    def _build_document(self, order: Dict[str, Any], center: str, details: List[Dict[str, Any]]) -> str:
+    def _build_document_bytes(self, order: Dict[str, Any], center: str, details: List[Dict[str, Any]]) -> bytes:
         order_id = order.get("id", "")
         order_number = f"{order.get('OrderSerie', '')}-{order.get('OrderNumber', '')}".strip("-")
         customer = order.get("ExternalPerson", "")
@@ -431,37 +435,79 @@ class TicketPrinter:
         created_at = order.get("Hour") or order.get("Created") or ""
         header_lines = [
             "=" * TICKET_WIDTH,
-            f"CENTRO DE PRODUCCION: {center}".center(TICKET_WIDTH),
+            f"CENTRO DE PRODUCCIÓN: {center}".center(TICKET_WIDTH),
             "=" * TICKET_WIDTH,
             f"NUMERO: {order_number}",
-            f"FECHA: {self._format_datetime(created_at)}",
+            f"FECHA Y HORA: {self._format_datetime(created_at)}",
         ]
         if cashier:
             header_lines.append(f"ASESOR: {cashier}")
-        if workspace or space:
-            header_lines.append("-" * TICKET_WIDTH)
-        if workspace:
-            header_lines.append(f"SALON: {workspace}")
-        if space:
-            header_lines.append(f"ESPACIO: {space}")
-
         item_lines = []
+        item_lines.append("-" * TICKET_WIDTH)
+        item_lines.append(self._format_table_header("CANTIDAD", "DESCRIPCIÓN"))
+        item_lines.append("-" * TICKET_WIDTH)
         for detail in details:
             quantity = self._format_quantity(detail.get("Quantity"))
             product = (detail.get("Product") or "").strip()
-            item_lines.append(f"{quantity} x {product}"[:120])
+            item_lines.extend(self._format_detail_rows(quantity, product))
             detail_obs = (detail.get("Observations") or "").strip()
             if detail_obs:
-                item_lines.append(f"  Obs: {detail_obs}"[:120])
+                item_lines.extend(self._format_detail_rows("", f"Obs: {detail_obs}"))
 
         footer_lines = []
         if observations:
-            footer_lines.append(f"OBS GENERAL: {observations}"[:120])
-        footer_lines.append(f"ITEMS: {len(details)}")
+            footer_lines.append(f"OBSERVACIONES: {observations}"[:120])
 
-        lines = header_lines + ["-" * TICKET_WIDTH] + item_lines + ["-" * TICKET_WIDTH] + footer_lines
+        lines: List[Any] = list(header_lines)
+        lines.append("-" * TICKET_WIDTH)
+        if workspace:
+            lines.append(self._highlight_line(f"SALÓN: {workspace}"))
+        if space:
+            lines.append(self._highlight_line(f"ESPACIO: {space}"))
+        lines.extend(item_lines)
+        lines.append("-" * TICKET_WIDTH)
+        lines.extend(footer_lines)
         lines.extend([""] * self.config.cut_lines)
-        return "\n".join(lines)
+        return self._encode_mixed_lines(lines)
+
+    def _highlight_line(self, text: str) -> bytes:
+        highlight_on = parse_hex_commands(self.config.highlight_command_hex, "PRINT_HIGHLIGHT_COMMAND_HEX")
+        bold_on = b"\x1b\x45\x01"
+        bold_off = b"\x1b\x45\x00"
+        highlight_off = parse_hex_commands(
+            self.config.highlight_reset_command_hex, "PRINT_HIGHLIGHT_RESET_COMMAND_HEX"
+        )
+        encoded_text = text.encode(self.config.print_encoding, errors="replace")
+        return highlight_on + bold_on + encoded_text + bold_off + highlight_off
+
+    def _encode_mixed_lines(self, lines: List[Any]) -> bytes:
+        encoded_lines: List[bytes] = []
+        for line in lines:
+            if isinstance(line, bytes):
+                encoded_lines.append(line)
+            else:
+                encoded_lines.append(str(line).encode(self.config.print_encoding, errors="replace"))
+        return b"\n".join(encoded_lines)
+
+    def _format_detail_rows(self, quantity: str, description: str) -> List[str]:
+        wrapped_description = textwrap.wrap(description, width=DESC_COL_WIDTH) or [""]
+        rows: List[str] = []
+        for index, chunk in enumerate(wrapped_description):
+            qty_value = quantity if index == 0 else ""
+            rows.append(self._format_table_row(qty_value, chunk))
+        return rows
+
+    @staticmethod
+    def _format_table_row(quantity: str, description: str) -> str:
+        qty_text = str(quantity or "")[:QTY_COL_WIDTH].center(QTY_COL_WIDTH)
+        desc_text = str(description or "")[:DESC_COL_WIDTH].ljust(DESC_COL_WIDTH)
+        return f"{qty_text}{desc_text}"
+
+    @staticmethod
+    def _format_table_header(quantity: str, description: str) -> str:
+        qty_text = str(quantity or "")[:QTY_COL_WIDTH].center(QTY_COL_WIDTH)
+        desc_text = str(description or "")[:DESC_COL_WIDTH].center(DESC_COL_WIDTH)
+        return f"{qty_text}{desc_text}"
 
     @staticmethod
     def _format_datetime(value: str) -> str:

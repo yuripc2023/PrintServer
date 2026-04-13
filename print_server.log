@@ -1,17 +1,184 @@
-2026-04-11 11:33:16,731 - INFO - ATIC Peru
-2026-04-11 11:33:16,731 - INFO - Iniciando print_server.py version 1.0.0
-2026-04-11 11:33:16,731 - INFO - Consulta configurada cada 10 segundo(s).
-2026-04-11 11:33:17,617 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
-2026-04-11 11:33:17,617 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
-2026-04-11 11:33:17,618 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
-2026-04-11 11:33:17,618 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
-2026-04-11 11:33:17,618 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
-2026-04-11 11:33:17,618 - INFO - Procesando pedido 6060 en 3 centro(s).
-2026-04-11 11:33:17,620 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
-2026-04-11 11:33:17,653 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=84
-2026-04-11 11:33:18,068 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
-2026-04-11 11:33:18,090 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=85
-2026-04-11 11:33:18,502 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
-2026-04-11 11:33:18,520 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=86
-2026-04-11 11:33:18,935 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
-2026-04-11 11:33:18,935 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:37:09,671 - INFO - ATIC Peru
+2026-04-11 11:37:09,671 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:37:09,671 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:37:10,608 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:37:10,608 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:37:10,608 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:37:10,608 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:37:10,608 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:37:10,608 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:37:10,610 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:37:10,650 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=87
+2026-04-11 11:37:11,066 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:37:11,102 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=88
+2026-04-11 11:37:11,517 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:37:11,545 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=89
+2026-04-11 11:37:11,960 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:37:11,960 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:38:17,596 - INFO - ATIC Peru
+2026-04-11 11:38:17,596 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:38:17,596 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:38:18,573 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:38:18,573 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:38:18,573 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:38:18,573 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:38:18,573 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:38:18,573 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:38:18,574 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:38:18,612 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=90
+2026-04-11 11:38:19,027 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:38:19,058 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=91
+2026-04-11 11:38:19,473 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:38:19,500 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=92
+2026-04-11 11:38:19,916 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:38:19,916 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:38:57,185 - INFO - ATIC Peru
+2026-04-11 11:38:57,185 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:38:57,186 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:38:58,153 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:38:58,154 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:38:58,154 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:38:58,154 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:38:58,154 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:38:58,154 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:38:58,156 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:38:58,192 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=93
+2026-04-11 11:38:58,608 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:38:58,635 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=94
+2026-04-11 11:38:59,053 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:38:59,082 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=95
+2026-04-11 11:38:59,496 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:38:59,496 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:42:09,605 - INFO - ATIC Peru
+2026-04-11 11:42:09,605 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:42:09,605 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:42:10,632 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:42:10,632 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:42:10,632 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:42:10,632 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:42:10,632 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:42:10,632 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:42:10,634 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:42:10,676 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=96
+2026-04-11 11:42:11,094 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:42:11,130 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=97
+2026-04-11 11:42:11,548 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:42:11,584 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=98
+2026-04-11 11:42:12,001 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:42:12,001 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:44:01,403 - INFO - ATIC Peru
+2026-04-11 11:44:01,403 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:44:01,403 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:44:02,345 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:44:02,345 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:44:02,345 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:44:02,345 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:44:02,345 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:44:02,346 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:44:02,347 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:44:02,384 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=99
+2026-04-11 11:44:02,800 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:44:02,827 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=100
+2026-04-11 11:44:03,243 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:44:03,274 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=101
+2026-04-11 11:44:03,691 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:44:03,691 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:45:33,416 - INFO - ATIC Peru
+2026-04-11 11:45:33,416 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:45:33,416 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:45:34,353 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:45:34,353 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:45:34,353 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:45:34,353 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:45:34,353 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:45:34,353 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:45:34,355 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:45:34,391 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=102
+2026-04-11 11:45:34,808 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:45:34,835 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=103
+2026-04-11 11:45:35,251 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:45:35,277 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=104
+2026-04-11 11:45:35,692 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:45:35,692 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:48:20,237 - INFO - ATIC Peru
+2026-04-11 11:48:20,237 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:48:20,237 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:48:21,166 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:48:21,167 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:48:21,167 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:48:21,167 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:48:21,167 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:48:21,167 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:48:21,169 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:48:21,205 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=105
+2026-04-11 11:48:21,621 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:48:21,654 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=106
+2026-04-11 11:48:22,068 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:48:22,092 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=107
+2026-04-11 11:48:22,510 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:48:22,510 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:51:13,777 - INFO - ATIC Peru
+2026-04-11 11:51:13,777 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:51:13,777 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:51:14,673 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:51:14,673 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:51:14,673 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:51:14,673 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:51:14,673 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:51:14,673 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:51:14,675 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:51:14,707 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=108
+2026-04-11 11:51:15,123 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:51:15,152 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=109
+2026-04-11 11:51:15,568 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:51:15,597 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=110
+2026-04-11 11:51:16,014 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:51:16,014 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:52:34,559 - INFO - ATIC Peru
+2026-04-11 11:52:34,559 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:52:34,559 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:52:35,442 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:52:35,442 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:52:35,442 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:52:35,442 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:52:35,442 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:52:35,442 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:52:35,444 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:52:35,481 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=111
+2026-04-11 11:52:35,897 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:52:35,924 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=112
+2026-04-11 11:52:36,340 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:52:36,367 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=113
+2026-04-11 11:52:36,785 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:52:36,785 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:54:04,322 - INFO - ATIC Peru
+2026-04-11 11:54:04,322 - INFO - Iniciando print_server.py version 1.0.0
+2026-04-11 11:54:04,322 - INFO - Consulta configurada cada 10 segundo(s).
+2026-04-11 11:54:05,368 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:54:05,369 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:54:05,369 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:54:05,369 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:54:05,369 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:54:05,369 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:54:05,371 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:54:05,411 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=114
+2026-04-11 11:54:05,827 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:54:05,859 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=115
+2026-04-11 11:54:06,273 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:54:06,291 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=116
+2026-04-11 11:54:06,705 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:54:06,705 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
+2026-04-11 11:54:17,321 - INFO - Se encontraron 1 pedido(s) con detalles pendientes.
+2026-04-11 11:54:17,322 - INFO - Pedido=6060 Detalle=26496 Producto='MONDONGO' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:54:17,322 - INFO - Pedido=6060 Detalle=26497 Producto='BIFE ANGOSTO CON CHORIZO' Centro='PARRILLA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:54:17,322 - INFO - Pedido=6060 Detalle=26498 Producto='VASO DE BEILYS' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=False
+2026-04-11 11:54:17,322 - INFO - Resumen de centros del pedido 6060: {'COCINA': 1, 'PARRILLA': 1, 'BARRA': 1}
+2026-04-11 11:54:17,322 - INFO - Procesando pedido 6060 en 3 centro(s).
+2026-04-11 11:54:17,322 - INFO - Enviando pedido 6060 al centro COCINA en impresora 'CBX-POS808'
+2026-04-11 11:54:17,354 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=COCINA Copia=1 JobId=117
+2026-04-11 11:54:17,769 - INFO - Enviando pedido 6060 al centro PARRILLA en impresora 'CBX-POS808'
+2026-04-11 11:54:17,798 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=PARRILLA Copia=1 JobId=118
+2026-04-11 11:54:18,213 - INFO - Enviando pedido 6060 al centro BARRA en impresora 'CBX-POS808'
+2026-04-11 11:54:18,240 - INFO - Trabajo de impresion generado. Pedido=6060 Centro=BARRA Copia=1 JobId=119
+2026-04-11 11:54:18,658 - INFO - Estado del ciclo. Detalles impresos=3 Detalles confirmados en API=0 Pendientes locales=52
+2026-04-11 11:54:18,658 - INFO - Ciclo finalizado. Pedidos=1 Detalles impresos=3 Proxima consulta en 10 segundo(s).
