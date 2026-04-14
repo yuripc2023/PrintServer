@@ -8,7 +8,6 @@ import textwrap
 from collections import defaultdict
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
-from string import Template
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
@@ -99,6 +98,10 @@ def parse_hex_commands(raw_value: str, env_name: str) -> bytes:
 
 def normalize_center(value: Optional[str]) -> str:
     return (value or "SIN_CENTRO").strip().upper()
+
+
+def has_printable_center(value: Optional[str]) -> bool:
+    return normalize_center(value) != "SIN_CENTRO"
 
 
 def list_installed_printers() -> List[str]:
@@ -255,7 +258,7 @@ class Config:
         self.beep_enabled = os.getenv("PRINT_BEEP_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
         self.beep_command_hex = os.getenv("PRINT_BEEP_COMMAND_HEX", "").strip()
         self.beep_position = os.getenv("PRINT_BEEP_POSITION", "before_cut").strip().lower()
-        self.reprint_when_not_confirmed = os.getenv("REPRINT_WHEN_NOT_CONFIRMED", "true").strip().lower() not in {
+        self.reprint_when_not_confirmed = os.getenv("REPRINT_WHEN_NOT_CONFIRMED", "false").strip().lower() not in {
             "0",
             "false",
             "no",
@@ -264,7 +267,6 @@ class Config:
 
         self.printed_url_template = env_required("API_PRINTED_URL_TEMPLATE")
         self.printed_method = os.getenv("API_PRINTED_METHOD", "PATCH").strip().upper()
-        self.printed_payload_template = os.getenv("API_PRINTED_PAYLOAD_TEMPLATE", '{"Printed": true}')
 
         if self.auth_mode == "basic" and (not self.username or not self.password):
             raise ValueError("API_USERNAME y API_PASSWORD son obligatorias para API_AUTH_MODE=basic")
@@ -309,10 +311,13 @@ class OrderApiClient:
         orders = self._normalize_orders_payload(payload)
         return [order for order in orders if self._has_pending_details(order)]
 
-    def mark_detail_as_printed(self, order: Dict[str, Any], detail: Dict[str, Any]) -> None:
-        substitutions = self._build_substitutions(order, detail)
+    def mark_order_details_as_printed(self, order: Dict[str, Any], details: List[Dict[str, Any]]) -> None:
+        if not details:
+            return
+
+        substitutions = self._build_substitutions(order, details[0])
         url = self.config.printed_url_template.format(**substitutions)
-        payload = self._render_payload_template(substitutions)
+        payload = self._build_printed_payload(order, details)
         response = self.session.request(
             self.config.printed_method,
             url,
@@ -340,14 +345,16 @@ class OrderApiClient:
         details = order.get("Details") or []
         return any(not bool(detail.get("Printed")) for detail in details)
 
-    def _render_payload_template(self, substitutions: Dict[str, Any]) -> Dict[str, Any]:
-        rendered = Template(self.config.printed_payload_template).safe_substitute(
-            {key: str(value) for key, value in substitutions.items()}
-        )
-        payload = json.loads(rendered)
-        if not isinstance(payload, dict):
-            raise ValueError("API_PRINTED_PAYLOAD_TEMPLATE debe renderizar un objeto JSON")
-        return payload
+    @staticmethod
+    def _build_printed_payload(order: Dict[str, Any], details_to_mark: List[Dict[str, Any]]) -> Dict[str, Any]:
+        details_to_mark_ids = {detail.get("id") for detail in details_to_mark}
+        payload_details: List[Dict[str, Any]] = []
+        for detail in order.get("Details") or []:
+            detail_payload = dict(detail)
+            if detail.get("id") in details_to_mark_ids:
+                detail_payload["Printed"] = True
+            payload_details.append(detail_payload)
+        return {"Details": payload_details}
 
     @staticmethod
     def _build_substitutions(order: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
@@ -535,6 +542,8 @@ def group_pending_details(order: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
         if bool(detail.get("Printed")):
             continue
         center = normalize_center(detail.get("ProductionCenter"))
+        if not has_printable_center(center):
+            continue
         grouped[center].append(detail)
     return grouped
 
@@ -549,11 +558,22 @@ def split_order_details(
         if bool(detail.get("Printed")):
             continue
 
+        center = normalize_center(detail.get("ProductionCenter"))
+        if not has_printable_center(center):
+            logging.info(
+                "Omitiendo detalle sin centro de produccion valido. Pedido=%s Detalle=%s Producto='%s' Centro='%s'",
+                order.get("id"),
+                detail.get("id"),
+                detail.get("Product"),
+                center,
+            )
+            pending_confirmation.append(detail)
+            continue
+
         if not config.reprint_when_not_confirmed and is_detail_cached(print_cache, detail.get("id")):
             pending_confirmation.append(detail)
             continue
 
-        center = normalize_center(detail.get("ProductionCenter"))
         grouped_to_print[center].append(detail)
 
     return grouped_to_print, pending_confirmation
@@ -583,21 +603,33 @@ def log_order_detail_centers(order: Dict[str, Any], config: Config) -> None:
     logging.info("Resumen de centros del pedido %s: %s", order.get("id"), dict(summary))
 
 
-def try_mark_detail(
-    client: OrderApiClient, order: Dict[str, Any], detail: Dict[str, Any], print_cache: Dict[str, float]
-) -> bool:
+def try_mark_order_details(
+    client: OrderApiClient, order: Dict[str, Any], details: List[Dict[str, Any]], print_cache: Dict[str, float]
+) -> int:
+    if not details:
+        return 0
+
     try:
-        client.mark_detail_as_printed(order, detail)
-        uncache_detail_printed(print_cache, detail.get("id"))
-        logging.info(
-            "Detalle marcado como impreso. Pedido=%s Detalle=%s Centro=%s",
-            order.get("id"),
-            detail.get("id"),
-            normalize_center(detail.get("ProductionCenter")),
-        )
-        return True
+        client.mark_order_details_as_printed(order, details)
+        for detail in details:
+            uncache_detail_printed(print_cache, detail.get("id"))
+            detail["Printed"] = True
+            logging.info(
+                "Detalle marcado como impreso. Pedido=%s Detalle=%s Centro=%s",
+                order.get("id"),
+                detail.get("id"),
+                normalize_center(detail.get("ProductionCenter")),
+            )
+        return len(details)
     except Exception as exc:
-        return False
+        detail_ids = [detail.get("id") for detail in details]
+        logging.exception(
+            "No se pudo actualizar el estado de impresion del pedido %s para detalles %s: %s",
+            order.get("id"),
+            detail_ids,
+            exc,
+        )
+        return 0
 
 
 def wait_for_next_cycle(seconds: int) -> bool:
@@ -623,6 +655,7 @@ def run_cycle(
         order_id = order.get("id")
         log_order_detail_centers(order, config)
         grouped, pending_confirmation = split_order_details(order, print_cache, config)
+        details_to_confirm: List[Dict[str, Any]] = list(pending_confirmation)
         if grouped:
             logging.info("Procesando pedido %s en %s centro(s).", order_id, len(grouped))
         for center, details in grouped.items():
@@ -630,12 +663,9 @@ def run_cycle(
             for detail in details:
                 cache_detail_printed(print_cache, detail.get("id"))
                 printed_count += 1
-                if try_mark_detail(client, order, detail, print_cache):
-                    confirmed_count += 1
+            details_to_confirm.extend(details)
 
-        for detail in pending_confirmation:
-            if try_mark_detail(client, order, detail, print_cache):
-                confirmed_count += 1
+        confirmed_count += try_mark_order_details(client, order, details_to_confirm, print_cache)
 
     save_print_cache(print_cache)
     logging.info(

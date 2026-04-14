@@ -1,6 +1,6 @@
 # PrintServer
 
-Servicio Windows en Python para consultar pedidos pendientes desde una API REST, separarlos por `ProductionCenter`, imprimir cada grupo en su impresora y luego marcar `Details.Printed = true`.
+Servicio Windows en Python para consultar pedidos pendientes desde una API REST, separarlos por `ProductionCenter`, imprimir cada grupo en su impresora y luego actualizar el pedido con `PATCH` enviando `Details.Printed = true`.
 
 ## Archivos principales
 
@@ -25,7 +25,7 @@ pip install -r requirements.txt
 - `ORDER_STATUS`: estado a consultar. Por defecto `Registrado`.
 - `API_AUTH_MODE`: `basic`, `bearer`, `token` o `none`.
 - `API_USERNAME` y `API_PASSWORD`, o `API_TOKEN` segun el caso.
-- `API_PRINTED_URL_TEMPLATE`: endpoint real para marcar un detalle como impreso.
+- `API_PRINTED_URL_TEMPLATE`: endpoint real para marcar el pedido como impreso enviando `Details`.
 - `PRINTER_MAP_JSON`: mapa de centros hacia el nombre exacto de la impresora instalada en Windows.
 
 Con eso la consulta queda asi:
@@ -107,4 +107,5 @@ python .\print_server_service.py remove
 - El valor por defecto de `POLL_SECONDS` es `10`. Es mejor punto de partida que `5` para no cargar innecesariamente la API. Si la API soporta filtros por pendientes, usalos en `API_QUERY_PARAMS_JSON`.
 - El servicio imprime un ticket por pedido y por centro de produccion.
 - Si un detalle ya viene con `Printed=true`, no se vuelve a imprimir.
-- La ruta exacta para actualizar `Printed` puede variar segun tu backend. Por eso se dejo configurable con `API_PRINTED_URL_TEMPLATE` y `API_PRINTED_METHOD`.
+- La confirmacion se hace con `PATCH` al pedido completo usando `API_PRINTED_URL_TEMPLATE`, por ejemplo `https://apisayri.atic.pe/api/orders/ordersales/{order_id}/`.
+- Si la confirmacion a la API falla, el cache local evita reimpresiones repetidas mientras el servicio sigue encendido cuando `REPRINT_WHEN_NOT_CONFIRMED=false`.
