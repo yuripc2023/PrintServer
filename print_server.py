@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import textwrap
+import unicodedata
 from collections import defaultdict
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
@@ -242,6 +243,7 @@ class Config:
         }
         self.print_copies = int(os.getenv("PRINT_COPIES", "1"))
         self.print_encoding = os.getenv("PRINT_ENCODING", "cp850")
+        self.print_codepage_command_hex = os.getenv("PRINT_CODEPAGE_COMMAND_HEX", "1B7402").strip()
         self.document_title = os.getenv("PRINT_DOCUMENT_TITLE", "TicketProduccion")
         self.cut_lines = int(os.getenv("PRINT_FEED_LINES", "4"))
         self.highlight_command_hex = os.getenv("PRINT_HIGHLIGHT_COMMAND_HEX", "1D2111").strip()
@@ -475,7 +477,12 @@ class TicketPrinter:
         lines.append("-" * TICKET_WIDTH)
         lines.extend(footer_lines)
         lines.extend([""] * self.config.cut_lines)
-        return self._encode_mixed_lines(lines)
+        return self._build_codepage_bytes() + self._encode_mixed_lines(lines)
+
+    def _build_codepage_bytes(self) -> bytes:
+        if not self.config.print_codepage_command_hex:
+            return b""
+        return parse_hex_commands(self.config.print_codepage_command_hex, "PRINT_CODEPAGE_COMMAND_HEX")
 
     def _highlight_line(self, text: str) -> bytes:
         highlight_on = parse_hex_commands(self.config.highlight_command_hex, "PRINT_HIGHLIGHT_COMMAND_HEX")
@@ -484,7 +491,7 @@ class TicketPrinter:
         highlight_off = parse_hex_commands(
             self.config.highlight_reset_command_hex, "PRINT_HIGHLIGHT_RESET_COMMAND_HEX"
         )
-        encoded_text = text.encode(self.config.print_encoding, errors="replace")
+        encoded_text = self._encode_text(text)
         return highlight_on + bold_on + encoded_text + bold_off + highlight_off
 
     def _encode_mixed_lines(self, lines: List[Any]) -> bytes:
@@ -493,8 +500,12 @@ class TicketPrinter:
             if isinstance(line, bytes):
                 encoded_lines.append(line)
             else:
-                encoded_lines.append(str(line).encode(self.config.print_encoding, errors="replace"))
+                encoded_lines.append(self._encode_text(str(line)))
         return b"\n".join(encoded_lines)
+
+    def _encode_text(self, text: str) -> bytes:
+        normalized_text = unicodedata.normalize("NFC", text)
+        return normalized_text.encode(self.config.print_encoding, errors="replace")
 
     def _format_detail_rows(self, quantity: str, description: str) -> List[str]:
         wrapped_description = textwrap.wrap(description, width=DESC_COL_WIDTH) or [""]

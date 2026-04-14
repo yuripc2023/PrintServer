@@ -63,6 +63,15 @@ PRINT_CUT_COMMAND_HEX=1D5641
 
 Algunos modelos usan `1D5600` en lugar de `1D5641`.
 
+Si ves mal las tildes o la `Ñ`, revisa la combinacion de:
+
+```env
+PRINT_ENCODING=cp850
+PRINT_CODEPAGE_COMMAND_HEX=1B7402
+```
+
+Ese comando selecciona la tabla de caracteres en la impresora antes de enviar el texto. Si tu modelo usa otra tabla ESC/POS, solo cambia `PRINT_CODEPAGE_COMMAND_HEX`.
+
 ## Instalacion como servicio Windows
 
 Instalar:
