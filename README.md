@@ -1,6 +1,6 @@
 # PrintServer
 
-Servicio Windows en Python para consultar pedidos pendientes desde una API REST, separarlos por `ProductionCenter`, imprimir cada grupo en su impresora y luego actualizar el pedido con `PATCH` enviando `Details.Printed = true`.
+Servicio Windows en Python para escuchar pedidos en tiempo real por WebSocket, separarlos por `ProductionCenter`, imprimir cada grupo en su impresora y luego actualizar el pedido con `PATCH` enviando `Details.Printed = true`.
 
 ## Archivos principales
 
@@ -20,18 +20,20 @@ pip install -r requirements.txt
 
 3. Crear `.env` a partir de `.env.example` y completar:
 
-- `API_ORDERS_URL`: endpoint de consulta de pedidos.
+- `API_ORDERS_URL`: endpoint REST usado para marcar pedidos como impresos.
 - `Company`: id de empresa a consultar.
 - `ORDER_STATUS`: estado a consultar. Por defecto `Registrado`.
 - `API_AUTH_MODE`: `basic`, `bearer`, `token` o `none`.
 - `API_USERNAME` y `API_PASSWORD`, o `API_TOKEN` segun el caso.
+- `WS_ORDERS_URL`: canal WebSocket de pedidos. Si se deja vacio, se construye como `wss://<host>/ws/restaurants/<WS_RESTAURANT_ID>/tables/`.
+- `WS_RESTAURANT_ID`: id del restaurante usado para construir el WebSocket cuando `WS_ORDERS_URL` no esta definido.
 - `API_PRINTED_URL_TEMPLATE`: endpoint real para marcar el pedido como impreso enviando `Details`.
 - `PRINTER_MAP_JSON`: mapa de centros hacia el nombre exacto de la impresora instalada en Windows.
 
-Con eso la consulta queda asi:
+Ejemplo de canal:
 
 ```text
-https://apisayri.atic.pe/api/orders/ordersales/?Company=10813&Status=Registrado
+wss://api.atic.pe/ws/restaurants/1/tables/
 ```
 
 ## Ejecucion manual
@@ -39,6 +41,8 @@ https://apisayri.atic.pe/api/orders/ordersales/?Company=10813&Status=Registrado
 ```powershell
 python .\print_server.py
 ```
+
+El proceso queda escuchando eventos `order.created` y `order.updated` para imprimir solo cuando llegue un pedido nuevo o actualizado.
 
 Listar impresoras instaladas en Windows:
 
@@ -113,7 +117,8 @@ python .\print_server_service.py remove
 ## Observaciones tecnicas
 
 - El log rota diariamente y conserva `LOG_BACKUP_COUNT` archivos historicos.
-- El valor por defecto de `POLL_SECONDS` es `10`. Es mejor punto de partida que `5` para no cargar innecesariamente la API. Si la API soporta filtros por pendientes, usalos en `API_QUERY_PARAMS_JSON`.
+- La impresion ya no depende de un `GET` ciclico; ahora se activa por eventos WebSocket.
+- Si `WS_ORDERS_URL` no esta definido, el servicio construye la ruta usando el host de `API_ORDERS_URL` y `WS_RESTAURANT_ID`.
 - El servicio imprime un ticket por pedido y por centro de produccion.
 - Si un detalle ya viene con `Printed=true`, no se vuelve a imprimir.
 - La confirmacion se hace con `PATCH` al pedido completo usando `API_PRINTED_URL_TEMPLATE`, por ejemplo `https://apisayri.atic.pe/api/orders/ordersales/{order_id}/`.

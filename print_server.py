@@ -1,7 +1,10 @@
 ﻿import argparse
 import json
+import base64
 import logging
 import os
+import socket
+import ssl
 import sys
 import time
 import textwrap
@@ -10,15 +13,17 @@ from collections import defaultdict
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 import win32event
 import win32print
 from dotenv import load_dotenv
 from requests.auth import HTTPBasicAuth
+from websocket import WebSocketConnectionClosedException, WebSocketTimeoutException, create_connection
 
 
-SCRIPT_VERSION = "1.0.0"
+SCRIPT_VERSION = "1.0.2"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 LOG_FILE_PATH = os.path.join(BASE_DIR, "print_server.log")
@@ -231,9 +236,26 @@ class Config:
         self.token_header = os.getenv("API_TOKEN_HEADER", "Authorization").strip()
         self.token_prefix = os.getenv("API_TOKEN_PREFIX", "Bearer").strip()
         self.timeout = int(os.getenv("API_TIMEOUT_SECONDS", "30"))
+        self.verify_tls = os.getenv("API_VERIFY_TLS", "true").strip().lower() not in {"0", "false", "no"}
         self.poll_seconds = int(os.getenv("POLL_SECONDS", "10"))
         self.idle_sleep_seconds = int(os.getenv("IDLE_SLEEP_SECONDS", str(self.poll_seconds)))
         self.error_sleep_seconds = int(os.getenv("ERROR_SLEEP_SECONDS", "30"))
+        self.websocket_url = self._build_websocket_url()
+        self.websocket_verify_tls = os.getenv("WS_VERIFY_TLS", str(self.verify_tls)).strip().lower() not in {
+            "0",
+            "false",
+            "no",
+        }
+        self.websocket_ping_interval_seconds = int(os.getenv("WS_PING_INTERVAL_SECONDS", "20"))
+        self.websocket_ping_timeout_seconds = int(os.getenv("WS_PING_TIMEOUT_SECONDS", "20"))
+        self.websocket_connect_timeout_seconds = int(
+            os.getenv("WS_CONNECT_TIMEOUT_SECONDS", str(self.timeout))
+        )
+        self.websocket_event_types = {
+            item.strip()
+            for item in os.getenv("WS_EVENT_TYPES", "order.created,order.updated").split(",")
+            if item.strip()
+        }
         self.query_params = parse_json_env("API_QUERY_PARAMS_JSON", {})
         self.extra_headers = parse_json_env("API_HEADERS_JSON", {})
         self.printer_map = {
@@ -265,7 +287,6 @@ class Config:
             "false",
             "no",
         }
-        self.verify_tls = os.getenv("API_VERIFY_TLS", "true").strip().lower() not in {"0", "false", "no"}
 
         self.printed_url_template = env_required("API_PRINTED_URL_TEMPLATE")
         self.printed_method = os.getenv("API_PRINTED_METHOD", "PATCH").strip().upper()
@@ -276,6 +297,8 @@ class Config:
             raise ValueError("API_TOKEN es obligatoria para API_AUTH_MODE=bearer/token")
         if not self.printer_map:
             raise ValueError("PRINTER_MAP_JSON es obligatorio y debe mapear centros a impresoras")
+        if not self.websocket_url:
+            raise ValueError("WS_ORDERS_URL es obligatoria o debe poder derivarse desde API_ORDERS_URL")
 
     def build_orders_query_params(self) -> Dict[str, Any]:
         params = dict(self.query_params)
@@ -284,6 +307,22 @@ class Config:
         if self.order_status:
             params["Status"] = self.order_status
         return params
+
+    def _build_websocket_url(self) -> str:
+        explicit_url = os.getenv("WS_ORDERS_URL", "").strip()
+        if explicit_url:
+            return explicit_url
+
+        restaurant_id = os.getenv("WS_RESTAURANT_ID", self.company).strip()
+        if not restaurant_id:
+            return ""
+
+        parsed_url = urlparse(self.orders_url)
+        if not parsed_url.scheme or not parsed_url.netloc:
+            return ""
+
+        websocket_scheme = "wss" if parsed_url.scheme == "https" else "ws"
+        return f"{websocket_scheme}://{parsed_url.netloc}/ws/restaurants/{restaurant_id}/tables/"
 
 
 class OrderApiClient:
@@ -328,6 +367,18 @@ class OrderApiClient:
             verify=self.config.verify_tls,
         )
         response.raise_for_status()
+
+    def build_websocket_headers(self) -> List[str]:
+        headers: List[str] = []
+        for key, value in self.session.headers.items():
+            headers.append(f"{key}: {value}")
+
+        if self.config.auth_mode == "basic":
+            credentials = f"{self.config.username}:{self.config.password}".encode("utf-8")
+            encoded_credentials = base64.b64encode(credentials).decode("ascii")
+            headers.append(f"Authorization: Basic {encoded_credentials}")
+
+        return headers
 
     @staticmethod
     def _normalize_orders_payload(payload: Any) -> List[Dict[str, Any]]:
@@ -466,6 +517,7 @@ class TicketPrinter:
         footer_lines = []
         if observations:
             footer_lines.append(f"OBSERVACIONES: {observations}"[:120])
+        footer_lines.append(f"Sayri Versión {SCRIPT_VERSION}".center(TICKET_WIDTH))
 
         lines: List[Any] = list(header_lines)
         lines.append("-" * TICKET_WIDTH)
@@ -651,41 +703,133 @@ def wait_for_next_cycle(seconds: int) -> bool:
     return False
 
 
-def run_cycle(
-    client: OrderApiClient, printer: TicketPrinter, print_cache: Dict[str, float], config: Config
+def process_order(
+    client: OrderApiClient, printer: TicketPrinter, print_cache: Dict[str, float], config: Config, order: Dict[str, Any]
 ) -> Tuple[int, int]:
     printed_count = 0
     confirmed_count = 0
-    orders = client.get_pending_orders()
-    if not orders:
-        logging.info("No hay pedidos pendientes por imprimir.")
-        return 0, 0
+    order_id = order.get("id")
+    log_order_detail_centers(order, config)
+    grouped, pending_confirmation = split_order_details(order, print_cache, config)
+    details_to_confirm: List[Dict[str, Any]] = list(pending_confirmation)
+    if grouped:
+        logging.info("Procesando pedido %s en %s centro(s).", order_id, len(grouped))
+    for center, details in grouped.items():
+        printer.print_order_group(order, center, details)
+        for detail in details:
+            cache_detail_printed(print_cache, detail.get("id"))
+            printed_count += 1
+        details_to_confirm.extend(details)
 
-    logging.info("Se encontraron %s pedido(s) con detalles pendientes.", len(orders))
-    for order in orders:
-        order_id = order.get("id")
-        log_order_detail_centers(order, config)
-        grouped, pending_confirmation = split_order_details(order, print_cache, config)
-        details_to_confirm: List[Dict[str, Any]] = list(pending_confirmation)
-        if grouped:
-            logging.info("Procesando pedido %s en %s centro(s).", order_id, len(grouped))
-        for center, details in grouped.items():
-            printer.print_order_group(order, center, details)
-            for detail in details:
-                cache_detail_printed(print_cache, detail.get("id"))
-                printed_count += 1
-            details_to_confirm.extend(details)
-
-        confirmed_count += try_mark_order_details(client, order, details_to_confirm, print_cache)
+    confirmed_count += try_mark_order_details(client, order, details_to_confirm, print_cache)
 
     save_print_cache(print_cache)
-    logging.info(
-        "Estado del ciclo. Detalles impresos=%s Detalles confirmados en API=%s Pendientes locales=%s",
-        printed_count,
-        confirmed_count,
-        len(print_cache),
-    )
-    return len(orders), printed_count
+    return confirmed_count, printed_count
+
+
+def should_process_order_event(order: Dict[str, Any], config: Config) -> bool:
+    if not order:
+        return False
+    if config.company and str(order.get("Company", "")) != str(config.company):
+        return False
+    if config.order_status and str(order.get("Status", "")).strip() != config.order_status:
+        return False
+    details = order.get("Details") or []
+    return any(not bool(detail.get("Printed")) for detail in details)
+
+
+def extract_order_from_event(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    order_payload = payload.get("order")
+    if isinstance(order_payload, dict):
+        return order_payload
+    if "id" in payload and "Details" in payload:
+        return payload
+    return None
+
+
+def listen_for_order_events(
+    client: OrderApiClient, printer: TicketPrinter, print_cache: Dict[str, float], config: Config
+) -> None:
+    logging.info("Escuchando eventos en %s", config.websocket_url)
+
+    while True:
+        websocket = None
+        try:
+            ssl_options = {"cert_reqs": ssl.CERT_REQUIRED if config.websocket_verify_tls else ssl.CERT_NONE}
+            websocket = create_connection(
+                config.websocket_url,
+                timeout=config.websocket_connect_timeout_seconds,
+                header=client.build_websocket_headers(),
+                sslopt=ssl_options,
+            )
+            websocket.settimeout(1)
+            last_ping_at = time.monotonic()
+            logging.info("Conexion WebSocket establecida correctamente.")
+
+            while True:
+                try:
+                    raw_message = websocket.recv()
+                except WebSocketTimeoutException:
+                    now = time.monotonic()
+                    if config.websocket_ping_interval_seconds > 0 and (
+                        now - last_ping_at
+                    ) >= config.websocket_ping_interval_seconds:
+                        websocket.ping()
+                        last_ping_at = now
+                    if SERVICE_STOP_EVENT and wait_for_next_cycle(1):
+                        logging.info("Se recibio senal de parada del servicio.")
+                        return
+                    continue
+
+                if raw_message is None:
+                    raise WebSocketConnectionClosedException("La conexion WebSocket fue cerrada")
+
+                payload = json.loads(raw_message)
+                event_type = str(payload.get("type", "")).strip()
+                if event_type == "connection.accepted":
+                    logging.info("Canal suscrito: %s", payload.get("group"))
+                    continue
+                if event_type not in config.websocket_event_types:
+                    continue
+
+                order = extract_order_from_event(payload)
+                if not order:
+                    logging.warning("Evento %s recibido sin payload de pedido util.", event_type)
+                    continue
+                if not should_process_order_event(order, config):
+                    logging.info(
+                        "Evento %s omitido para pedido %s por estado, compania o sin detalles pendientes.",
+                        event_type,
+                        order.get("id"),
+                    )
+                    continue
+
+                confirmed_count, printed_count = process_order(client, printer, print_cache, config, order)
+                logging.info(
+                    "Evento procesado. Tipo=%s Pedido=%s Detalles impresos=%s Detalles confirmados=%s Pendientes locales=%s",
+                    event_type,
+                    order.get("id"),
+                    printed_count,
+                    confirmed_count,
+                    len(print_cache),
+                )
+        except (OSError, socket.error, TimeoutError, WebSocketConnectionClosedException, ConnectionError) as exc:
+            logging.error("Conexion WebSocket interrumpida: %s", exc, exc_info=True)
+        except json.JSONDecodeError as exc:
+            logging.error("Se recibio un mensaje WebSocket invalido: %s", exc, exc_info=True)
+        except Exception as exc:
+            logging.error("Error procesando eventos WebSocket: %s", exc, exc_info=True)
+        finally:
+            if websocket is not None:
+                try:
+                    websocket.close()
+                except Exception:
+                    pass
+
+        logging.info("Reintentando conexion WebSocket en %s segundo(s).", config.error_sleep_seconds)
+        if wait_for_next_cycle(config.error_sleep_seconds):
+            logging.info("Se recibio senal de parada del servicio.")
+            break
 
 
 def main() -> None:
@@ -698,25 +842,8 @@ def main() -> None:
 
     logging.info("ATIC Peru")
     logging.info("Iniciando print_server.py version %s", SCRIPT_VERSION)
-    logging.info("Consulta configurada cada %s segundo(s).", config.poll_seconds)
-
-    while True:
-        try:
-            orders_count, printed_count = run_cycle(client, printer, print_cache, config)
-            sleep_seconds = config.idle_sleep_seconds if printed_count == 0 else config.poll_seconds
-            logging.info(
-                "Ciclo finalizado. Pedidos=%s Detalles impresos=%s Proxima consulta en %s segundo(s).",
-                orders_count,
-                printed_count,
-                sleep_seconds,
-            )
-        except Exception as exc:
-            logging.error("Error en el ciclo principal: %s", exc, exc_info=True)
-            sleep_seconds = config.error_sleep_seconds
-
-        if wait_for_next_cycle(sleep_seconds):
-            logging.info("Se recibio senal de parada del servicio.")
-            break
+    logging.info("Modo de escucha configurado por WebSocket.")
+    listen_for_order_events(client, printer, print_cache, config)
 
 
 if __name__ == "__main__":

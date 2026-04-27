@@ -4,3 +4,4 @@
 send_xml.spec
 /__pycache__
 last_log_cleanup.txt
+.env copy
