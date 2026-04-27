@@ -27,8 +27,12 @@ pip install -r requirements.txt
 - `API_USERNAME` y `API_PASSWORD`, o `API_TOKEN` segun el caso.
 - `WS_ORDERS_URL`: canal WebSocket de pedidos. Si se deja vacio, se construye como `wss://<host>/ws/restaurants/<WS_RESTAURANT_ID>/tables/`.
 - `WS_RESTAURANT_ID`: id del restaurante usado para construir el WebSocket cuando `WS_ORDERS_URL` no esta definido.
+- `WS_RECONNECT_DELAY_SECONDS`: segundos de espera antes de reconectar el WebSocket si la conexion se corta.
+- `SYNC_PENDING_ON_CONNECT`: cuando vale `true`, al conectar o reconectar hace una consulta REST de respaldo para recuperar pedidos pendientes perdidos durante una suspension o corte de red.
 - `API_PRINTED_URL_TEMPLATE`: endpoint real para marcar el pedido como impreso enviando `Details`.
 - `PRINTER_MAP_JSON`: mapa de centros hacia el nombre exacto de la impresora instalada en Windows.
+- `PRECUENTA_PRINTER_NAME`: impresora para la precuenta. Si se deja vacio, se usa la primera impresora disponible del mapa de centros del pedido.
+- `PRECUENTA_COPIES`: cantidad de copias a imprimir para la precuenta.
 
 Ejemplo de canal:
 
@@ -114,12 +118,26 @@ Eliminar:
 python .\print_server_service.py remove
 ```
 
+Instalar o actualizar automaticamente el servicio existente:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_or_update_service.ps1
+```
+
+Si usas otro ejecutable de Python:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_or_update_service.ps1 -PythonExe "C:\Ruta\python.exe"
+```
+
 ## Observaciones tecnicas
 
 - El log rota diariamente y conserva `LOG_BACKUP_COUNT` archivos historicos.
 - La impresion ya no depende de un `GET` ciclico; ahora se activa por eventos WebSocket.
+- Si Windows entra en suspension o la red cae, el servicio reintenta el WebSocket y puede hacer una sincronizacion REST de respaldo al reconectar.
 - Si `WS_ORDERS_URL` no esta definido, el servicio construye la ruta usando el host de `API_ORDERS_URL` y `WS_RESTAURANT_ID`.
 - El servicio imprime un ticket por pedido y por centro de produccion.
+- Si `StatusInvoice` llega como `precuenta`, el servicio imprime una precuenta con el mismo JSON del evento y luego actualiza `StatusInvoice` a `-` para no repetirla.
 - Si un detalle ya viene con `Printed=true`, no se vuelve a imprimir.
 - La confirmacion se hace con `PATCH` al pedido completo usando `API_PRINTED_URL_TEMPLATE`, por ejemplo `https://apisayri.atic.pe/api/orders/ordersales/{order_id}/`.
 - Si la confirmacion a la API falla, el cache local evita reimpresiones repetidas mientras el servicio sigue encendido cuando `REPRINT_WHEN_NOT_CONFIRMED=false`.

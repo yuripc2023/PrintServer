@@ -251,6 +251,12 @@ class Config:
         self.websocket_connect_timeout_seconds = int(
             os.getenv("WS_CONNECT_TIMEOUT_SECONDS", str(self.timeout))
         )
+        self.websocket_reconnect_delay_seconds = int(os.getenv("WS_RECONNECT_DELAY_SECONDS", "5"))
+        self.sync_pending_on_connect = os.getenv("SYNC_PENDING_ON_CONNECT", "true").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+        }
         self.websocket_event_types = {
             item.strip()
             for item in os.getenv("WS_EVENT_TYPES", "order.created,order.updated").split(",")
@@ -264,6 +270,8 @@ class Config:
             if str(value).strip()
         }
         self.print_copies = int(os.getenv("PRINT_COPIES", "1"))
+        self.precuenta_printer_name = os.getenv("PRECUENTA_PRINTER_NAME", "").strip()
+        self.precuenta_copies = int(os.getenv("PRECUENTA_COPIES", "1"))
         self.print_encoding = os.getenv("PRINT_ENCODING", "cp850")
         self.print_codepage_command_hex = os.getenv("PRINT_CODEPAGE_COMMAND_HEX", "1B7402").strip()
         self.document_title = os.getenv("PRINT_DOCUMENT_TITLE", "TicketProduccion")
@@ -313,7 +321,7 @@ class Config:
         if explicit_url:
             return explicit_url
 
-        restaurant_id = os.getenv("WS_RESTAURANT_ID", self.company).strip()
+        restaurant_id = self.company or os.getenv("WS_RESTAURANT_ID", "").strip()
         if not restaurant_id:
             return ""
 
@@ -352,13 +360,18 @@ class OrderApiClient:
         orders = self._normalize_orders_payload(payload)
         return [order for order in orders if self._has_pending_details(order)]
 
-    def mark_order_details_as_printed(self, order: Dict[str, Any], details: List[Dict[str, Any]]) -> None:
-        if not details:
+    def update_order_print_state(
+        self, order: Dict[str, Any], details: Optional[List[Dict[str, Any]]] = None, status_invoice: Optional[str] = None
+    ) -> None:
+        details_to_mark = details or []
+        if not details_to_mark and status_invoice is None:
             return
 
-        substitutions = self._build_substitutions(order, details[0])
+        reference_details = order.get("Details") or [{}]
+        reference_detail = details_to_mark[0] if details_to_mark else reference_details[0]
+        substitutions = self._build_substitutions(order, reference_detail)
         url = self.config.printed_url_template.format(**substitutions)
-        payload = self._build_printed_payload(order, details)
+        payload = self._build_order_update_payload(order, details_to_mark, status_invoice)
         response = self.session.request(
             self.config.printed_method,
             url,
@@ -396,10 +409,12 @@ class OrderApiClient:
     @staticmethod
     def _has_pending_details(order: Dict[str, Any]) -> bool:
         details = order.get("Details") or []
-        return any(not bool(detail.get("Printed")) for detail in details)
+        return any(not bool(detail.get("Printed")) for detail in details) or needs_precuenta_print(order)
 
     @staticmethod
-    def _build_printed_payload(order: Dict[str, Any], details_to_mark: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _build_order_update_payload(
+        order: Dict[str, Any], details_to_mark: List[Dict[str, Any]], status_invoice: Optional[str]
+    ) -> Dict[str, Any]:
         details_to_mark_ids = {detail.get("id") for detail in details_to_mark}
         payload_details: List[Dict[str, Any]] = []
         for detail in order.get("Details") or []:
@@ -407,7 +422,10 @@ class OrderApiClient:
             if detail.get("id") in details_to_mark_ids:
                 detail_payload["Printed"] = True
             payload_details.append(detail_payload)
-        return {"Details": payload_details}
+        payload: Dict[str, Any] = {"Details": payload_details}
+        if status_invoice is not None:
+            payload["StatusInvoice"] = status_invoice
+        return payload
 
     @staticmethod
     def _build_substitutions(order: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
@@ -435,29 +453,20 @@ class TicketPrinter:
         payload_bytes = self._build_payload_bytes(raw_bytes, beep_bytes, cut_bytes)
 
         logging.info("Enviando pedido %s al centro %s en impresora '%s'", order.get("id"), center, printer_name)
-        printer_handle = win32print.OpenPrinter(printer_name)
-        try:
-            for copy_number in range(self.config.print_copies):
-                job_id = win32print.StartDocPrinter(printer_handle, 1, (self.config.document_title, None, "RAW"))
-                try:
-                    win32print.StartPagePrinter(printer_handle)
-                    win32print.WritePrinter(printer_handle, payload_bytes)
-                    if cut_bytes and not self.config.combine_ticket_and_cut:
-                        win32print.WritePrinter(printer_handle, cut_bytes)
-                    win32print.EndPagePrinter(printer_handle)
-                    logging.info(
-                        "Trabajo de impresion generado. Pedido=%s Centro=%s Copia=%s JobId=%s",
-                        order.get("id"),
-                        center,
-                        copy_number + 1,
-                        job_id,
-                    )
-                finally:
-                    win32print.EndDocPrinter(printer_handle)
-                    if self.config.after_job_sleep_ms > 0:
-                        time.sleep(self.config.after_job_sleep_ms / 1000)
-        finally:
-            win32print.ClosePrinter(printer_handle)
+        self._send_to_printer(printer_name, payload_bytes, order.get("id"), center, self.config.print_copies)
+
+    def print_precuenta(self, order: Dict[str, Any]) -> None:
+        printer_name = self._resolve_precuenta_printer_name(order)
+        if not printer_name:
+            raise ValueError("No hay impresora configurada para imprimir la precuenta")
+
+        raw_bytes = self._build_precuenta_bytes(order)
+        beep_bytes = self._build_beep_bytes()
+        cut_bytes = self._build_cut_bytes()
+        payload_bytes = self._build_payload_bytes(raw_bytes, beep_bytes, cut_bytes)
+
+        logging.info("Enviando precuenta del pedido %s a impresora '%s'", order.get("id"), printer_name)
+        self._send_to_printer(printer_name, payload_bytes, order.get("id"), "PRECUENTA", self.config.precuenta_copies)
 
     def _build_payload_bytes(self, raw_bytes: bytes, beep_bytes: bytes, cut_bytes: bytes) -> bytes:
         if not self.config.combine_ticket_and_cut:
@@ -470,6 +479,31 @@ class TicketPrinter:
         if self.config.beep_position == "after_cut":
             return raw_bytes + cut_bytes + beep_bytes
         return raw_bytes + beep_bytes + cut_bytes
+
+    def _send_to_printer(
+        self, printer_name: str, payload_bytes: bytes, order_id: Any, job_label: str, copies: int
+    ) -> None:
+        printer_handle = win32print.OpenPrinter(printer_name)
+        try:
+            for copy_number in range(max(copies, 1)):
+                job_id = win32print.StartDocPrinter(printer_handle, 1, (self.config.document_title, None, "RAW"))
+                try:
+                    win32print.StartPagePrinter(printer_handle)
+                    win32print.WritePrinter(printer_handle, payload_bytes)
+                    win32print.EndPagePrinter(printer_handle)
+                    logging.info(
+                        "Trabajo de impresion generado. Pedido=%s Tipo=%s Copia=%s JobId=%s",
+                        order_id,
+                        job_label,
+                        copy_number + 1,
+                        job_id,
+                    )
+                finally:
+                    win32print.EndDocPrinter(printer_handle)
+                    if self.config.after_job_sleep_ms > 0:
+                        time.sleep(self.config.after_job_sleep_ms / 1000)
+        finally:
+            win32print.ClosePrinter(printer_handle)
 
     def _build_beep_bytes(self) -> bytes:
         if not self.config.beep_enabled:
@@ -517,7 +551,7 @@ class TicketPrinter:
         footer_lines = []
         if observations:
             footer_lines.append(f"OBSERVACIONES: {observations}"[:120])
-        footer_lines.append(f"Sayri Versión {SCRIPT_VERSION}".center(TICKET_WIDTH))
+        footer_lines.append(f"Sayri V {SCRIPT_VERSION}".center(TICKET_WIDTH))
 
         lines: List[Any] = list(header_lines)
         lines.append("-" * TICKET_WIDTH)
@@ -530,6 +564,73 @@ class TicketPrinter:
         lines.extend(footer_lines)
         lines.extend([""] * self.config.cut_lines)
         return self._build_codepage_bytes() + self._encode_mixed_lines(lines)
+
+    def _build_precuenta_bytes(self, order: Dict[str, Any]) -> bytes:
+        order_number = f"{order.get('OrderSerie', '')}-{order.get('OrderNumber', '')}".strip("-")
+        cashier = order.get("Cashier") or order.get("InternalPerson") or ""
+        workspace = order.get("WorkSpace") or ""
+        space = order.get("Space") or ""
+        observations = order.get("Observations") or ""
+        created_at = order.get("Hour") or order.get("Created") or ""
+        total = order.get("Total") or "0.00"
+        seller_name = self._extract_precuenta_seller_name(cashier)
+
+        lines: List[Any] = [
+            "=" * TICKET_WIDTH,
+            "PRE - CUENTA".center(TICKET_WIDTH),
+            order_number.center(TICKET_WIDTH),
+            "=" * TICKET_WIDTH,
+        ]
+        if workspace:
+            lines.append(f"SALÓN: {workspace}")
+        if space:
+            lines.append(f"MESA: {space}")
+        lines.append(f"FEC. EMISIÓN: {self._format_date(created_at)}")
+        if seller_name:
+            lines.append(f"VENDEDOR: {seller_name}")
+        lines.append(f"HORA: {self._format_time(created_at)}")
+        lines.append("=" * TICKET_WIDTH)
+        lines.append(self._format_precuenta_header())
+        lines.append("=" * TICKET_WIDTH)
+
+        for detail in order.get("Details") or []:
+            quantity = self._format_quantity(detail.get("Quantity")) or "0"
+            product = (detail.get("Product") or "").strip()
+            price = self._format_money(detail.get("Price"))
+            amount = self._format_money(detail.get("Amount"))
+            lines.extend(self._format_precuenta_rows(quantity, product, price, amount))
+
+        lines.append("=" * TICKET_WIDTH)
+        lines.append(f"TOTAL: {self._format_money(total)}".rjust(TICKET_WIDTH))
+        lines.append("OBSERVACIONES:")
+        if observations:
+            for chunk in textwrap.wrap(str(observations), width=TICKET_WIDTH) or [""]:
+                lines.append(chunk)
+        lines.append("R. SOCIAL: __________________________")
+        lines.append("R. U. C.: ___________________________")
+        lines.append("DIRECCIÓN: __________________________")
+        lines.append("")
+        disclaimer = (
+            "Este documento NO ES UN COMPROBANTE DE PAGO VÁLIDO y NO otorga derecho a crédito fiscal, "
+            "reclame su comprobante en caja."
+        )
+        for chunk in textwrap.wrap(disclaimer, width=TICKET_WIDTH, break_long_words=False):
+            lines.append(chunk.center(TICKET_WIDTH))
+        lines.extend([""] * self.config.cut_lines)
+        return self._build_codepage_bytes() + self._encode_mixed_lines(lines)
+
+    def _resolve_precuenta_printer_name(self, order: Dict[str, Any]) -> str:
+        if self.config.precuenta_printer_name:
+            return self.config.precuenta_printer_name
+
+        for detail in order.get("Details") or []:
+            center = normalize_center(detail.get("ProductionCenter"))
+            printer_name = self.config.printer_map.get(center)
+            if printer_name:
+                return printer_name
+
+        printer_names = [name for name in self.config.printer_map.values() if name]
+        return printer_names[0] if printer_names else ""
 
     def _build_codepage_bytes(self) -> bytes:
         if not self.config.print_codepage_command_hex:
@@ -598,6 +699,60 @@ class TicketPrinter:
             return str(int(numeric))
         return f"{numeric:.2f}".rstrip("0").rstrip(".")
 
+    @staticmethod
+    def _format_money(value: Any) -> str:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return str(value or "0.00")
+        return f"{numeric:.2f}"
+
+    @staticmethod
+    def _format_date(value: str) -> str:
+        if not value:
+            return ""
+        try:
+            return datetime.fromisoformat(value).strftime("%d/%m/%Y")
+        except ValueError:
+            return value
+
+    @staticmethod
+    def _format_time(value: str) -> str:
+        if not value:
+            return ""
+        try:
+            return datetime.fromisoformat(value).strftime("%I:%M:%S %p").lstrip("0")
+        except ValueError:
+            return value
+
+    @staticmethod
+    def _extract_precuenta_seller_name(value: str) -> str:
+        raw_value = str(value or "").strip()
+        if not raw_value:
+            return ""
+        if " - " in raw_value:
+            raw_value = raw_value.split(" - ", 1)[0]
+        return raw_value.strip().upper()
+
+    @staticmethod
+    def _format_precuenta_header() -> str:
+        return f"{'Cant.':<5} {'Detalle':<16} {'Prec.':>7} {'Total':>7}"
+
+    def _format_precuenta_rows(self, quantity: str, description: str, price: str, total: str) -> List[str]:
+        wrapped_description = textwrap.wrap(
+            str(description or ""),
+            width=16,
+            break_long_words=True,
+            break_on_hyphens=True,
+        ) or [""]
+        rows: List[str] = []
+        for index, chunk in enumerate(wrapped_description):
+            qty_cell = str(quantity or "") if index == 0 else ""
+            price_cell = str(price or "") if index == 0 else ""
+            total_cell = str(total or "") if index == 0 else ""
+            rows.append(f"{qty_cell:<5} {chunk:<16} {price_cell:>7} {total_cell:>7}")
+        return rows
+
 
 def group_pending_details(order: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
     grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -613,9 +768,10 @@ def group_pending_details(order: Dict[str, Any]) -> Dict[str, List[Dict[str, Any
 
 def split_order_details(
     order: Dict[str, Any], print_cache: Dict[str, float], config: Config
-) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, Any]]]:
+) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     grouped_to_print: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     pending_confirmation: List[Dict[str, Any]] = []
+    skipped_invalid_center: List[Dict[str, Any]] = []
 
     for detail in order.get("Details") or []:
         if bool(detail.get("Printed")):
@@ -630,7 +786,7 @@ def split_order_details(
                 detail.get("Product"),
                 center,
             )
-            pending_confirmation.append(detail)
+            skipped_invalid_center.append(detail)
             continue
 
         if not config.reprint_when_not_confirmed and is_detail_cached(print_cache, detail.get("id")):
@@ -639,7 +795,11 @@ def split_order_details(
 
         grouped_to_print[center].append(detail)
 
-    return grouped_to_print, pending_confirmation
+    return grouped_to_print, pending_confirmation, skipped_invalid_center
+
+
+def needs_precuenta_print(order: Dict[str, Any]) -> bool:
+    return str(order.get("StatusInvoice") or "").strip().lower() == "precuenta"
 
 
 def log_order_detail_centers(order: Dict[str, Any], config: Config) -> None:
@@ -670,6 +830,44 @@ def try_mark_order_details(
     client: OrderApiClient, order: Dict[str, Any], details: List[Dict[str, Any]], print_cache: Dict[str, float]
 ) -> int:
     if not details:
+        return 0
+
+
+def try_finalize_order_state(
+    client: OrderApiClient,
+    order: Dict[str, Any],
+    details: List[Dict[str, Any]],
+    print_cache: Dict[str, float],
+    reset_status_invoice: bool,
+) -> int:
+    if not details and not reset_status_invoice:
+        return 0
+
+    try:
+        next_status_invoice = "-" if reset_status_invoice else None
+        client.update_order_print_state(order, details, next_status_invoice)
+        for detail in details:
+            uncache_detail_printed(print_cache, detail.get("id"))
+            detail["Printed"] = True
+            logging.info(
+                "Detalle marcado como impreso. Pedido=%s Detalle=%s Centro=%s",
+                order.get("id"),
+                detail.get("id"),
+                normalize_center(detail.get("ProductionCenter")),
+            )
+        if reset_status_invoice:
+            order["StatusInvoice"] = "-"
+            logging.info("Precuenta marcada como impresa. Pedido=%s", order.get("id"))
+        return len(details) + (1 if reset_status_invoice else 0)
+    except Exception as exc:
+        detail_ids = [detail.get("id") for detail in details]
+        logging.exception(
+            "No se pudo actualizar el estado del pedido %s. Detalles=%s ResetStatusInvoice=%s Error=%s",
+            order.get("id"),
+            detail_ids,
+            reset_status_invoice,
+            exc,
+        )
         return 0
 
     try:
@@ -710,8 +908,9 @@ def process_order(
     confirmed_count = 0
     order_id = order.get("id")
     log_order_detail_centers(order, config)
-    grouped, pending_confirmation = split_order_details(order, print_cache, config)
+    grouped, pending_confirmation, skipped_invalid_center = split_order_details(order, print_cache, config)
     details_to_confirm: List[Dict[str, Any]] = list(pending_confirmation)
+    should_print_precuenta = needs_precuenta_print(order)
     if grouped:
         logging.info("Procesando pedido %s en %s centro(s).", order_id, len(grouped))
     for center, details in grouped.items():
@@ -721,10 +920,42 @@ def process_order(
             printed_count += 1
         details_to_confirm.extend(details)
 
-    confirmed_count += try_mark_order_details(client, order, details_to_confirm, print_cache)
+    if should_print_precuenta:
+        printer.print_precuenta(order)
+        printed_count += 1
+
+    if skipped_invalid_center:
+        skipped_ids = [detail.get("id") for detail in skipped_invalid_center]
+        logging.warning(
+            "Pedido %s tiene detalles sin ProductionCenter valido. No se imprimen ni se marcan como impresos. Detalles=%s",
+            order_id,
+            skipped_ids,
+        )
+
+    confirmed_count += try_finalize_order_state(
+        client, order, details_to_confirm, print_cache, reset_status_invoice=should_print_precuenta
+    )
 
     save_print_cache(print_cache)
     return confirmed_count, printed_count
+
+
+def sync_pending_orders(
+    client: OrderApiClient, printer: TicketPrinter, print_cache: Dict[str, float], config: Config
+) -> Tuple[int, int]:
+    printed_count = 0
+    processed_orders = 0
+    orders = client.get_pending_orders()
+    if not orders:
+        logging.info("Sincronizacion REST sin pedidos pendientes.")
+        return 0, 0
+
+    logging.info("Sincronizacion REST encontro %s pedido(s) pendiente(s).", len(orders))
+    for order in orders:
+        processed_orders += 1
+        _, current_printed_count = process_order(client, printer, print_cache, config, order)
+        printed_count += current_printed_count
+    return processed_orders, printed_count
 
 
 def should_process_order_event(order: Dict[str, Any], config: Config) -> bool:
@@ -735,7 +966,7 @@ def should_process_order_event(order: Dict[str, Any], config: Config) -> bool:
     if config.order_status and str(order.get("Status", "")).strip() != config.order_status:
         return False
     details = order.get("Details") or []
-    return any(not bool(detail.get("Printed")) for detail in details)
+    return any(not bool(detail.get("Printed")) for detail in details) or needs_precuenta_print(order)
 
 
 def extract_order_from_event(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -765,6 +996,16 @@ def listen_for_order_events(
             websocket.settimeout(1)
             last_ping_at = time.monotonic()
             logging.info("Conexion WebSocket establecida correctamente.")
+            if config.sync_pending_on_connect:
+                try:
+                    synced_orders, synced_printed = sync_pending_orders(client, printer, print_cache, config)
+                    logging.info(
+                        "Sincronizacion posterior a reconexion completada. Pedidos=%s Detalles impresos=%s",
+                        synced_orders,
+                        synced_printed,
+                    )
+                except Exception as exc:
+                    logging.warning("No se pudo completar la sincronizacion REST tras reconectar: %s", exc)
 
             while True:
                 try:
@@ -814,7 +1055,7 @@ def listen_for_order_events(
                     len(print_cache),
                 )
         except (OSError, socket.error, TimeoutError, WebSocketConnectionClosedException, ConnectionError) as exc:
-            logging.error("Conexion WebSocket interrumpida: %s", exc, exc_info=True)
+            logging.warning("Conexion WebSocket interrumpida: %s", exc)
         except json.JSONDecodeError as exc:
             logging.error("Se recibio un mensaje WebSocket invalido: %s", exc, exc_info=True)
         except Exception as exc:
@@ -826,8 +1067,11 @@ def listen_for_order_events(
                 except Exception:
                     pass
 
-        logging.info("Reintentando conexion WebSocket en %s segundo(s).", config.error_sleep_seconds)
-        if wait_for_next_cycle(config.error_sleep_seconds):
+        logging.info(
+            "Reintentando conexion WebSocket en %s segundo(s).",
+            config.websocket_reconnect_delay_seconds,
+        )
+        if wait_for_next_cycle(config.websocket_reconnect_delay_seconds):
             logging.info("Se recibio senal de parada del servicio.")
             break
 

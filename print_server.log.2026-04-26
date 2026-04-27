@@ -1,0 +1,15 @@
+2026-04-26 23:38:47,864 - INFO - Pedido=92 Detalle=221 Producto='POLLO A LA PLANCHA' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=True
+2026-04-26 23:38:47,865 - INFO - Resumen de centros del pedido 92: {'BARRA': 1}
+2026-04-26 23:38:47,865 - INFO - Enviando precuenta del pedido 92 a impresora 'CBX-POS808'
+2026-04-26 23:38:47,911 - INFO - Trabajo de impresion generado. Pedido=92 Tipo=PRECUENTA Copia=1 JobId=31
+2026-04-26 23:38:49,404 - INFO - Precuenta marcada como impresa. Pedido=92
+2026-04-26 23:38:49,406 - INFO - Evento procesado. Tipo=order.updated Pedido=92 Detalles impresos=1 Detalles confirmados=1 Pendientes locales=49
+2026-04-26 23:38:49,407 - INFO - Evento order.updated omitido para pedido 92 por estado, compania o sin detalles pendientes.
+2026-04-26 23:39:10,821 - INFO - Pedido=91 Detalle=223 Producto='CARNE A LA PARRILLA' Centro='COCINA' Impresora='CBX-POS808' PrintedApi=True
+2026-04-26 23:39:10,821 - INFO - Pedido=91 Detalle=220 Producto='POLLO A LA PLANCHA' Centro='BARRA' Impresora='CBX-POS808' PrintedApi=True
+2026-04-26 23:39:10,822 - INFO - Resumen de centros del pedido 91: {'COCINA': 1, 'BARRA': 1}
+2026-04-26 23:39:10,822 - INFO - Enviando precuenta del pedido 91 a impresora 'CBX-POS808'
+2026-04-26 23:39:10,868 - INFO - Trabajo de impresion generado. Pedido=91 Tipo=PRECUENTA Copia=1 JobId=32
+2026-04-26 23:39:12,130 - INFO - Precuenta marcada como impresa. Pedido=91
+2026-04-26 23:39:12,132 - INFO - Evento procesado. Tipo=order.updated Pedido=91 Detalles impresos=1 Detalles confirmados=1 Pendientes locales=49
+2026-04-26 23:39:12,133 - INFO - Evento order.updated omitido para pedido 91 por estado, compania o sin detalles pendientes.
