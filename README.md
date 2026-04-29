@@ -2,6 +2,10 @@
 
 Servicio Windows en Python para escuchar pedidos en tiempo real por WebSocket, separarlos por `ProductionCenter`, imprimir cada grupo en su impresora y luego actualizar el pedido con `PATCH` enviando `Details.Printed = true`.
 
+## GIT
+
+https://github.com/yuripc2023/PrintServer
+
 ## Archivos principales
 
 - `print_server.py`: logica principal de consulta, agrupacion, impresion y actualizacion.

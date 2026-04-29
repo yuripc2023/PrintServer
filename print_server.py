@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import requests
 import win32event
 import win32print
+import certifi
 from dotenv import load_dotenv
 from requests.auth import HTTPBasicAuth
 from websocket import WebSocketConnectionClosedException, WebSocketTimeoutException, create_connection
@@ -987,6 +988,8 @@ def listen_for_order_events(
         websocket = None
         try:
             ssl_options = {"cert_reqs": ssl.CERT_REQUIRED if config.websocket_verify_tls else ssl.CERT_NONE}
+            if config.websocket_verify_tls:
+                ssl_options["ca_certs"] = certifi.where()
             websocket = create_connection(
                 config.websocket_url,
                 timeout=config.websocket_connect_timeout_seconds,
