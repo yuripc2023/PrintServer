@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$PythonExe = "python",
-    [string]$ServiceName = "ATICPrintServer"
+    [string]$ServiceName = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +27,15 @@ Set-Location $scriptDir
 Write-Step "Validando Python"
 & $PythonExe --version | Out-Null
 
+Write-Step "Validando wrapper del servicio"
+$pythonServiceName = (& $PythonExe -c "import print_server_service; print(print_server_service.PrintServerWindowsService._svc_name_)").Trim()
+if (-not $ServiceName) {
+    $ServiceName = $pythonServiceName
+}
+if ($ServiceName -ne $pythonServiceName) {
+    throw "ServiceName='$ServiceName' no coincide con el nombre definido en print_server_service.py: '$pythonServiceName'."
+}
+
 $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 
 if ($null -ne $existingService) {
@@ -34,8 +43,7 @@ if ($null -ne $existingService) {
 
     if ($existingService.Status -ne "Stopped") {
         Write-Step "Deteniendo servicio"
-        & $PythonExe .\print_server_service.py stop
-        Start-Sleep -Seconds 2
+        & $PythonExe .\print_server_service.py stop --wait 30
     }
 
     Write-Step "Eliminando instalacion anterior"
@@ -44,13 +52,10 @@ if ($null -ne $existingService) {
 }
 
 Write-Step "Instalando servicio"
-& $PythonExe .\print_server_service.py install
-
-Write-Step "Configurando inicio automatico"
-& sc.exe config $ServiceName start= auto | Out-Null
+& $PythonExe .\print_server_service.py install --startup auto
 
 Write-Step "Iniciando servicio"
-& $PythonExe .\print_server_service.py start
+& $PythonExe .\print_server_service.py start --wait 30
 
 Write-Step "Estado final del servicio"
 Get-Service -Name $ServiceName | Format-Table -AutoSize

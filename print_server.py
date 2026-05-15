@@ -404,7 +404,12 @@ class Config:
             for key, value in config_dict(self.settings, ("printers", "map"), "PRINTER_MAP_JSON", {}).items()
             if str(value).strip()
         }
-        self.print_copies = config_int(self.settings, ("print", "copies"), "PRINT_COPIES", 1)
+        self.print_copies = int(
+            os.getenv(
+                "PRODUCTION_PRINT_COPIES",
+                str(config_int(self.settings, ("print", "copies"), "PRINT_COPIES", 1)),
+            )
+        )
         self.precuenta_printer_name = str(
             get_config_value(self.settings, ("print", "precuenta_printer_name"), "PRECUENTA_PRINTER_NAME", "")
         ).strip()
@@ -433,6 +438,22 @@ class Config:
                 self.settings, ("print", "detail_size_reset_command_hex"), "PRINT_DETAIL_SIZE_RESET_COMMAND_HEX", "1D2100"
             )
         ).strip()
+        self.detail_font_command_hex = str(
+            get_config_value(self.settings, ("print", "detail_font_command_hex"), "PRINT_DETAIL_FONT_COMMAND_HEX", "")
+        ).strip()
+        self.detail_font_reset_command_hex = str(
+            get_config_value(self.settings, ("print", "detail_font_reset_command_hex"), "PRINT_DETAIL_FONT_RESET_COMMAND_HEX", "")
+        ).strip()
+        self.detail_use_highlight_style = config_bool(
+            self.settings, ("print", "detail_use_highlight_style"), "PRINT_DETAIL_USE_HIGHLIGHT_STYLE", False
+        )
+        self.detail_ticket_width = config_int(self.settings, ("print", "detail_ticket_width"), "PRINT_DETAIL_TICKET_WIDTH", 40)
+        self.detail_quantity_width = config_int(
+            self.settings, ("print", "detail_quantity_width"), "PRINT_DETAIL_QUANTITY_WIDTH", 8
+        )
+        self.detail_description_indent = config_int(
+            self.settings, ("print", "detail_description_indent"), "PRINT_DETAIL_DESCRIPTION_INDENT", self.detail_quantity_width
+        )
         self.cut_enabled = config_bool(self.settings, ("print", "cut_enabled"), "PRINT_CUT_ENABLED", True)
         self.cut_command_hex = str(
             get_config_value(self.settings, ("print", "cut_command_hex"), "PRINT_CUT_COMMAND_HEX", "1D5641")
@@ -807,15 +828,20 @@ class TicketPrinter:
         return highlight_on + bold_on + encoded_text + bold_off + highlight_off
 
     def _format_print_detail_rows(self, quantity: str, description: str) -> List[Any]:
-        detail_rows = self._format_detail_rows(quantity, description)
+        if self.config.detail_use_highlight_style:
+            return [self._highlight_line(row) for row in self._format_sized_detail_rows(quantity, description)]
+
         if not self.config.detail_size_command_hex:
-            return detail_rows
+            return self._format_detail_rows(quantity, description)
 
         size_on = parse_hex_commands(self.config.detail_size_command_hex, "PRINT_DETAIL_SIZE_COMMAND_HEX")
         size_off = parse_hex_commands(
             self.config.detail_size_reset_command_hex, "PRINT_DETAIL_SIZE_RESET_COMMAND_HEX"
         )
-        return [size_on + self._encode_text(row) + size_off for row in detail_rows]
+        font_on = parse_hex_commands(self.config.detail_font_command_hex, "PRINT_DETAIL_FONT_COMMAND_HEX")
+        font_off = parse_hex_commands(self.config.detail_font_reset_command_hex, "PRINT_DETAIL_FONT_RESET_COMMAND_HEX")
+        detail_rows = self._format_sized_detail_rows(quantity, description)
+        return [font_on + size_on + self._encode_text(row) + size_off + font_off for row in detail_rows]
 
     def _encode_mixed_lines(self, lines: List[Any]) -> bytes:
         encoded_lines: List[bytes] = []
@@ -836,6 +862,28 @@ class TicketPrinter:
         for index, chunk in enumerate(wrapped_description):
             qty_value = quantity if index == 0 else ""
             rows.append(self._format_table_row(qty_value, chunk))
+        return rows
+
+    def _format_sized_detail_rows(self, quantity: str, description: str) -> List[str]:
+        qty_width = max(1, min(self.config.detail_quantity_width, self.config.detail_ticket_width - 1))
+        desc_width = max(1, self.config.detail_ticket_width - qty_width)
+        continuation_indent = max(0, min(self.config.detail_description_indent, self.config.detail_ticket_width - 1))
+        continuation_width = max(1, self.config.detail_ticket_width - continuation_indent)
+        wrapped_description = textwrap.wrap(
+            " ".join(str(description or "").split()),
+            width=desc_width,
+            break_long_words=True,
+            break_on_hyphens=False,
+        ) or [""]
+        rows: List[str] = []
+        for index, chunk in enumerate(wrapped_description):
+            if index == 0:
+                qty_text = str(quantity or "")[:qty_width].center(qty_width)
+                desc_text = str(chunk or "")[:desc_width].ljust(desc_width)
+                rows.append(f"{qty_text}{desc_text}"[: self.config.detail_ticket_width])
+                continue
+
+            rows.append((" " * continuation_indent) + str(chunk or "").strip()[:continuation_width])
         return rows
 
     @staticmethod

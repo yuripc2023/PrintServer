@@ -28,6 +28,7 @@ pip install -r requirements.txt
 - `API_ORDERS_URL`: endpoint REST de pedidos.
 - `API_USERNAME` y `API_PASSWORD` para autenticacion basic.
 - `API_TOKEN` para autenticacion bearer/token.
+- `PRODUCTION_PRINT_COPIES`: copias para centros de produccion como cocina, barra o parrilla. No afecta la precuenta.
 
 4. Ajustar configuracion en `settings.toml`:
 
@@ -84,8 +85,14 @@ Para agrandar el detalle de produccion sin cambiar el ancho de las columnas:
 
 ```toml
 [print]
-detail_size_command_hex = "1D2110"
+detail_size_command_hex = "1D2101"
 detail_size_reset_command_hex = "1D2100"
+detail_font_command_hex = ""
+detail_font_reset_command_hex = ""
+detail_use_highlight_style = true
+detail_ticket_width = 20
+detail_quantity_width = 4
+detail_description_indent = 4
 ```
 
 Si ves mal las tildes o la `Ñ`, revisa la combinacion de:
