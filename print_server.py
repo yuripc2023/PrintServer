@@ -8,6 +8,7 @@ import ssl
 import sys
 import time
 import textwrap
+import tomllib
 import unicodedata
 from collections import defaultdict
 from datetime import datetime
@@ -27,6 +28,7 @@ from websocket import WebSocketConnectionClosedException, WebSocketTimeoutExcept
 SCRIPT_VERSION = "1.0.2"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
+SETTINGS_PATH = os.path.join(BASE_DIR, "settings.toml")
 LOG_FILE_PATH = os.path.join(BASE_DIR, "print_server.log")
 PRINT_CACHE_PATH = os.path.join(BASE_DIR, "printed_cache.json")
 SERVICE_STOP_EVENT = None
@@ -42,6 +44,13 @@ def load_environment() -> None:
         raise FileNotFoundError(f"No se encontro el archivo .env en {ENV_PATH}")
 
 
+def load_settings() -> Dict[str, Any]:
+    if not os.path.exists(SETTINGS_PATH):
+        return {}
+    with open(SETTINGS_PATH, "rb") as settings_file:
+        return tomllib.load(settings_file)
+
+
 def setup_logging() -> None:
     root_logger = logging.getLogger()
     if root_logger.handlers:
@@ -49,7 +58,8 @@ def setup_logging() -> None:
             root_logger.removeHandler(handler)
             handler.close()
 
-    backup_count = int(os.getenv("LOG_BACKUP_COUNT", "7"))
+    settings = load_settings()
+    backup_count = int(get_config_value(settings, ("service", "log_backup_count"), "LOG_BACKUP_COUNT", 7))
     handler = TimedRotatingFileHandler(
         LOG_FILE_PATH,
         when="midnight",
@@ -76,6 +86,72 @@ def env_required(name: str) -> str:
     if not value:
         raise ValueError(f"La variable de entorno {name} es obligatoria")
     return value
+
+
+def get_nested_value(payload: Dict[str, Any], path: Tuple[str, ...]) -> Any:
+    current: Any = payload
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
+
+
+def get_config_value(settings: Dict[str, Any], path: Tuple[str, ...], env_name: str, default: Any = "") -> Any:
+    value = get_nested_value(settings, path)
+    if value is not None:
+        return value
+
+    env_value = os.getenv(env_name)
+    if env_value is not None:
+        return env_value.strip()
+
+    return default
+
+
+def get_required_config_value(settings: Dict[str, Any], path: Tuple[str, ...], env_name: str) -> str:
+    value = str(get_config_value(settings, path, env_name, "")).strip()
+    if not value:
+        dotted_path = ".".join(path)
+        raise ValueError(f"La configuracion {dotted_path} o la variable {env_name} es obligatoria")
+    return value
+
+
+def config_bool(settings: Dict[str, Any], path: Tuple[str, ...], env_name: str, default: bool) -> bool:
+    value = get_config_value(settings, path, env_name, default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in {"0", "false", "no"}
+
+
+def config_int(settings: Dict[str, Any], path: Tuple[str, ...], env_name: str, default: int) -> int:
+    return int(get_config_value(settings, path, env_name, default))
+
+
+def config_dict(settings: Dict[str, Any], path: Tuple[str, ...], env_name: str, default: Dict[str, Any]) -> Dict[str, Any]:
+    value = get_nested_value(settings, path)
+    if isinstance(value, dict):
+        return value
+    return parse_json_env(env_name, default)
+
+
+def config_list(settings: Dict[str, Any], path: Tuple[str, ...], env_name: str, default: List[str]) -> List[str]:
+    value = get_nested_value(settings, path)
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    env_value = os.getenv(env_name, "").strip()
+    if env_value:
+        return [item.strip() for item in env_value.split(",") if item.strip()]
+    return default
+
+
+def build_printed_url_template(orders_url: str, configured_template: str = "") -> str:
+    configured_template = configured_template.strip()
+    if configured_template:
+        return configured_template
+
+    return f"{orders_url.rstrip('/')}/{{order_id}}/"
 
 
 def parse_json_env(name: str, default: Any) -> Any:
@@ -147,6 +223,43 @@ def update_env_value(file_path: str, key: str, value: str) -> None:
         env_file.writelines(lines)
 
 
+def format_toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(format_toml_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        items = [f"{format_toml_value(str(key))} = {format_toml_value(item)}" for key, item in value.items()]
+        return "{ " + ", ".join(items) + " }"
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def write_settings(settings: Dict[str, Any]) -> None:
+    lines: List[str] = []
+    for section, values in settings.items():
+        if not isinstance(values, dict):
+            continue
+        if lines:
+            lines.append("")
+        lines.append(f"[{section}]")
+        for key, value in values.items():
+            lines.append(f"{key} = {format_toml_value(value)}")
+
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as settings_file:
+        settings_file.write("\n".join(lines) + "\n")
+
+
+def update_settings_printer_map(printer_map: Dict[str, str]) -> None:
+    settings = load_settings()
+    printers = settings.setdefault("printers", {})
+    if not isinstance(printers, dict):
+        raise ValueError("La seccion printers de settings.toml debe ser una tabla")
+    printers["map"] = printer_map
+    write_settings(settings)
+
+
 def load_print_cache() -> Dict[str, float]:
     if not os.path.exists(PRINT_CACHE_PATH):
         return {}
@@ -192,12 +305,12 @@ def handle_cli(argv: List[str]) -> bool:
     parser.add_argument(
         "--sync-printer-map",
         action="store_true",
-        help="Actualiza PRINTER_MAP_JSON en .env usando las impresoras instaladas",
+        help="Actualiza printers.map en settings.toml usando las impresoras instaladas",
     )
     parser.add_argument(
         "--centers",
         default="COCINA,BARRA,PARRILLAS",
-        help="Centros separados por coma para generar PRINTER_MAP_JSON",
+        help="Centros separados por coma para generar printers.map",
     )
     args = parser.parse_args(argv)
 
@@ -216,10 +329,9 @@ def handle_cli(argv: List[str]) -> bool:
         if not centers:
             raise ValueError("Debes indicar al menos un centro en --centers")
         printer_map = generate_printer_map(centers)
-        json_value = json.dumps(printer_map, ensure_ascii=False, separators=(",", ":"))
-        update_env_value(ENV_PATH, "PRINTER_MAP_JSON", json_value)
-        print("PRINTER_MAP_JSON actualizado en .env")
-        print(json_value)
+        update_settings_printer_map(printer_map)
+        print("printers.map actualizado en settings.toml")
+        print(json.dumps(printer_map, ensure_ascii=False, separators=(",", ":")))
         return True
 
     return False
@@ -227,87 +339,134 @@ def handle_cli(argv: List[str]) -> bool:
 
 class Config:
     def __init__(self) -> None:
-        self.orders_url = env_required("API_ORDERS_URL")
-        self.company = os.getenv("Company", "").strip()
-        self.order_status = os.getenv("ORDER_STATUS", "Registrado").strip()
-        self.auth_mode = os.getenv("API_AUTH_MODE", "basic").strip().lower()
+        self.settings = load_settings()
+        self.orders_url = get_required_config_value(self.settings, ("api", "orders_url"), "API_ORDERS_URL")
+        self.company = str(get_config_value(self.settings, ("api", "company"), "Company", "")).strip()
+        self.order_status = str(
+            get_config_value(self.settings, ("api", "order_status"), "ORDER_STATUS", "Registrado")
+        ).strip()
+        self.auth_mode = str(
+            get_config_value(self.settings, ("api", "auth_mode"), "API_AUTH_MODE", "basic")
+        ).strip().lower()
         self.username = os.getenv("API_USERNAME", "").strip()
         self.password = os.getenv("API_PASSWORD", "").strip()
         self.token = os.getenv("API_TOKEN", "").strip()
-        self.token_header = os.getenv("API_TOKEN_HEADER", "Authorization").strip()
-        self.token_prefix = os.getenv("API_TOKEN_PREFIX", "Bearer").strip()
-        self.timeout = int(os.getenv("API_TIMEOUT_SECONDS", "30"))
-        self.verify_tls = os.getenv("API_VERIFY_TLS", "true").strip().lower() not in {"0", "false", "no"}
-        self.poll_seconds = int(os.getenv("POLL_SECONDS", "10"))
-        self.idle_sleep_seconds = int(os.getenv("IDLE_SLEEP_SECONDS", str(self.poll_seconds)))
-        self.error_sleep_seconds = int(os.getenv("ERROR_SLEEP_SECONDS", "30"))
-        self.websocket_url = self._build_websocket_url()
-        self.websocket_verify_tls = os.getenv("WS_VERIFY_TLS", str(self.verify_tls)).strip().lower() not in {
-            "0",
-            "false",
-            "no",
-        }
-        self.websocket_ping_interval_seconds = int(os.getenv("WS_PING_INTERVAL_SECONDS", "20"))
-        self.websocket_ping_timeout_seconds = int(os.getenv("WS_PING_TIMEOUT_SECONDS", "20"))
-        self.websocket_connect_timeout_seconds = int(
-            os.getenv("WS_CONNECT_TIMEOUT_SECONDS", str(self.timeout))
+        self.token_header = str(
+            get_config_value(self.settings, ("api", "token_header"), "API_TOKEN_HEADER", "Authorization")
+        ).strip()
+        self.token_prefix = str(
+            get_config_value(self.settings, ("api", "token_prefix"), "API_TOKEN_PREFIX", "Bearer")
+        ).strip()
+        self.timeout = config_int(self.settings, ("api", "timeout_seconds"), "API_TIMEOUT_SECONDS", 30)
+        self.verify_tls = config_bool(self.settings, ("api", "verify_tls"), "API_VERIFY_TLS", True)
+        self.poll_seconds = config_int(self.settings, ("service", "poll_seconds"), "POLL_SECONDS", 10)
+        self.idle_sleep_seconds = config_int(
+            self.settings,
+            ("service", "idle_sleep_seconds"),
+            "IDLE_SLEEP_SECONDS",
+            self.poll_seconds,
         )
-        self.websocket_reconnect_delay_seconds = int(os.getenv("WS_RECONNECT_DELAY_SECONDS", "5"))
-        self.sync_pending_on_connect = os.getenv("SYNC_PENDING_ON_CONNECT", "true").strip().lower() not in {
-            "0",
-            "false",
-            "no",
-        }
+        self.error_sleep_seconds = config_int(self.settings, ("service", "error_sleep_seconds"), "ERROR_SLEEP_SECONDS", 30)
+        self.websocket_url_override = str(
+            get_config_value(self.settings, ("websocket", "url"), "WS_ORDERS_URL", "")
+        ).strip()
+        self.websocket_restaurant_id = str(
+            get_config_value(self.settings, ("websocket", "restaurant_id"), "WS_RESTAURANT_ID", "")
+        ).strip()
+        self.websocket_url = self._build_websocket_url()
+        self.websocket_verify_tls = config_bool(self.settings, ("websocket", "verify_tls"), "WS_VERIFY_TLS", self.verify_tls)
+        self.websocket_ping_interval_seconds = config_int(
+            self.settings, ("websocket", "ping_interval_seconds"), "WS_PING_INTERVAL_SECONDS", 20
+        )
+        self.websocket_ping_timeout_seconds = config_int(
+            self.settings, ("websocket", "ping_timeout_seconds"), "WS_PING_TIMEOUT_SECONDS", 20
+        )
+        self.websocket_connect_timeout_seconds = config_int(
+            self.settings, ("websocket", "connect_timeout_seconds"), "WS_CONNECT_TIMEOUT_SECONDS", self.timeout
+        )
+        self.websocket_reconnect_delay_seconds = config_int(
+            self.settings, ("websocket", "reconnect_delay_seconds"), "WS_RECONNECT_DELAY_SECONDS", 5
+        )
+        self.sync_pending_on_connect = config_bool(
+            self.settings, ("websocket", "sync_pending_on_connect"), "SYNC_PENDING_ON_CONNECT", True
+        )
         self.websocket_event_types = {
             item.strip()
-            for item in os.getenv("WS_EVENT_TYPES", "order.created,order.updated").split(",")
+            for item in config_list(
+                self.settings, ("websocket", "event_types"), "WS_EVENT_TYPES", ["order.created", "order.updated"]
+            )
             if item.strip()
         }
-        self.query_params = parse_json_env("API_QUERY_PARAMS_JSON", {})
-        self.extra_headers = parse_json_env("API_HEADERS_JSON", {})
+        self.query_params = config_dict(self.settings, ("api", "query_params"), "API_QUERY_PARAMS_JSON", {})
+        self.extra_headers = config_dict(self.settings, ("api", "headers"), "API_HEADERS_JSON", {})
         self.printer_map = {
             normalize_center(key): value
-            for key, value in parse_json_env("PRINTER_MAP_JSON", {}).items()
+            for key, value in config_dict(self.settings, ("printers", "map"), "PRINTER_MAP_JSON", {}).items()
             if str(value).strip()
         }
-        self.print_copies = int(os.getenv("PRINT_COPIES", "1"))
-        self.precuenta_printer_name = os.getenv("PRECUENTA_PRINTER_NAME", "").strip()
-        self.precuenta_copies = int(os.getenv("PRECUENTA_COPIES", "1"))
-        self.print_encoding = os.getenv("PRINT_ENCODING", "cp850")
-        self.print_codepage_command_hex = os.getenv("PRINT_CODEPAGE_COMMAND_HEX", "1B7402").strip()
-        self.document_title = os.getenv("PRINT_DOCUMENT_TITLE", "TicketProduccion")
-        self.cut_lines = int(os.getenv("PRINT_FEED_LINES", "4"))
-        self.highlight_command_hex = os.getenv("PRINT_HIGHLIGHT_COMMAND_HEX", "1D2111").strip()
-        self.highlight_reset_command_hex = os.getenv("PRINT_HIGHLIGHT_RESET_COMMAND_HEX", "1D2100").strip()
-        self.cut_enabled = os.getenv("PRINT_CUT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
-        self.cut_command_hex = os.getenv("PRINT_CUT_COMMAND_HEX", "1D5641")
-        self.pre_cut_feed_lines = int(os.getenv("PRINT_PRE_CUT_FEED_LINES", "3"))
-        self.after_job_sleep_ms = int(os.getenv("PRINT_AFTER_JOB_SLEEP_MS", "300"))
-        self.combine_ticket_and_cut = os.getenv("PRINT_COMBINE_TICKET_AND_CUT", "true").strip().lower() not in {
-            "0",
-            "false",
-            "no",
-        }
-        self.beep_enabled = os.getenv("PRINT_BEEP_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
-        self.beep_command_hex = os.getenv("PRINT_BEEP_COMMAND_HEX", "").strip()
-        self.beep_position = os.getenv("PRINT_BEEP_POSITION", "before_cut").strip().lower()
-        self.reprint_when_not_confirmed = os.getenv("REPRINT_WHEN_NOT_CONFIRMED", "false").strip().lower() not in {
-            "0",
-            "false",
-            "no",
-        }
+        self.print_copies = config_int(self.settings, ("print", "copies"), "PRINT_COPIES", 1)
+        self.precuenta_printer_name = str(
+            get_config_value(self.settings, ("print", "precuenta_printer_name"), "PRECUENTA_PRINTER_NAME", "")
+        ).strip()
+        self.precuenta_copies = config_int(self.settings, ("print", "precuenta_copies"), "PRECUENTA_COPIES", 1)
+        self.print_encoding = str(get_config_value(self.settings, ("print", "encoding"), "PRINT_ENCODING", "cp850"))
+        self.print_codepage_command_hex = str(
+            get_config_value(self.settings, ("print", "codepage_command_hex"), "PRINT_CODEPAGE_COMMAND_HEX", "1B7402")
+        ).strip()
+        self.document_title = str(
+            get_config_value(self.settings, ("print", "document_title"), "PRINT_DOCUMENT_TITLE", "TicketProduccion")
+        )
+        self.cut_lines = config_int(self.settings, ("print", "feed_lines"), "PRINT_FEED_LINES", 4)
+        self.highlight_command_hex = str(
+            get_config_value(self.settings, ("print", "highlight_command_hex"), "PRINT_HIGHLIGHT_COMMAND_HEX", "1D2111")
+        ).strip()
+        self.highlight_reset_command_hex = str(
+            get_config_value(
+                self.settings, ("print", "highlight_reset_command_hex"), "PRINT_HIGHLIGHT_RESET_COMMAND_HEX", "1D2100"
+            )
+        ).strip()
+        self.detail_size_command_hex = str(
+            get_config_value(self.settings, ("print", "detail_size_command_hex"), "PRINT_DETAIL_SIZE_COMMAND_HEX", "")
+        ).strip()
+        self.detail_size_reset_command_hex = str(
+            get_config_value(
+                self.settings, ("print", "detail_size_reset_command_hex"), "PRINT_DETAIL_SIZE_RESET_COMMAND_HEX", "1D2100"
+            )
+        ).strip()
+        self.cut_enabled = config_bool(self.settings, ("print", "cut_enabled"), "PRINT_CUT_ENABLED", True)
+        self.cut_command_hex = str(
+            get_config_value(self.settings, ("print", "cut_command_hex"), "PRINT_CUT_COMMAND_HEX", "1D5641")
+        )
+        self.pre_cut_feed_lines = config_int(self.settings, ("print", "pre_cut_feed_lines"), "PRINT_PRE_CUT_FEED_LINES", 3)
+        self.after_job_sleep_ms = config_int(self.settings, ("print", "after_job_sleep_ms"), "PRINT_AFTER_JOB_SLEEP_MS", 300)
+        self.combine_ticket_and_cut = config_bool(
+            self.settings, ("print", "combine_ticket_and_cut"), "PRINT_COMBINE_TICKET_AND_CUT", True
+        )
+        self.beep_enabled = config_bool(self.settings, ("print", "beep_enabled"), "PRINT_BEEP_ENABLED", False)
+        self.beep_command_hex = str(get_config_value(self.settings, ("print", "beep_command_hex"), "PRINT_BEEP_COMMAND_HEX", "")).strip()
+        self.beep_position = str(
+            get_config_value(self.settings, ("print", "beep_position"), "PRINT_BEEP_POSITION", "before_cut")
+        ).strip().lower()
+        self.reprint_when_not_confirmed = config_bool(
+            self.settings, ("print", "reprint_when_not_confirmed"), "REPRINT_WHEN_NOT_CONFIRMED", False
+        )
 
-        self.printed_url_template = env_required("API_PRINTED_URL_TEMPLATE")
-        self.printed_method = os.getenv("API_PRINTED_METHOD", "PATCH").strip().upper()
+        configured_printed_url_template = str(
+            get_config_value(self.settings, ("api", "printed_url_template"), "API_PRINTED_URL_TEMPLATE", "")
+        )
+        self.printed_url_template = build_printed_url_template(self.orders_url, configured_printed_url_template)
+        self.printed_method = str(
+            get_config_value(self.settings, ("api", "printed_method"), "API_PRINTED_METHOD", "PATCH")
+        ).strip().upper()
 
         if self.auth_mode == "basic" and (not self.username or not self.password):
             raise ValueError("API_USERNAME y API_PASSWORD son obligatorias para API_AUTH_MODE=basic")
         if self.auth_mode in {"bearer", "token"} and not self.token:
             raise ValueError("API_TOKEN es obligatoria para API_AUTH_MODE=bearer/token")
         if not self.printer_map:
-            raise ValueError("PRINTER_MAP_JSON es obligatorio y debe mapear centros a impresoras")
+            raise ValueError("printers.map en settings.toml es obligatorio y debe mapear centros a impresoras")
         if not self.websocket_url:
-            raise ValueError("WS_ORDERS_URL es obligatoria o debe poder derivarse desde API_ORDERS_URL")
+            raise ValueError("websocket.url es obligatorio o debe poder derivarse desde api.orders_url y api.company")
 
     def build_orders_query_params(self) -> Dict[str, Any]:
         params = dict(self.query_params)
@@ -318,11 +477,10 @@ class Config:
         return params
 
     def _build_websocket_url(self) -> str:
-        explicit_url = os.getenv("WS_ORDERS_URL", "").strip()
-        if explicit_url:
-            return explicit_url
+        if self.websocket_url_override:
+            return self.websocket_url_override
 
-        restaurant_id = self.company or os.getenv("WS_RESTAURANT_ID", "").strip()
+        restaurant_id = self.company or self.websocket_restaurant_id
         if not restaurant_id:
             return ""
 
@@ -544,10 +702,10 @@ class TicketPrinter:
         for detail in details:
             quantity = self._format_quantity(detail.get("Quantity"))
             product = (detail.get("Product") or "").strip()
-            item_lines.extend(self._format_detail_rows(quantity, product))
+            item_lines.extend(self._format_print_detail_rows(quantity, product))
             detail_obs = (detail.get("Observations") or "").strip()
             if detail_obs:
-                item_lines.extend(self._format_detail_rows("", f"Obs: {detail_obs}"))
+                item_lines.extend(self._format_print_detail_rows("", f"Obs: {detail_obs}"))
 
         footer_lines = []
         if observations:
@@ -647,6 +805,17 @@ class TicketPrinter:
         )
         encoded_text = self._encode_text(text)
         return highlight_on + bold_on + encoded_text + bold_off + highlight_off
+
+    def _format_print_detail_rows(self, quantity: str, description: str) -> List[Any]:
+        detail_rows = self._format_detail_rows(quantity, description)
+        if not self.config.detail_size_command_hex:
+            return detail_rows
+
+        size_on = parse_hex_commands(self.config.detail_size_command_hex, "PRINT_DETAIL_SIZE_COMMAND_HEX")
+        size_off = parse_hex_commands(
+            self.config.detail_size_reset_command_hex, "PRINT_DETAIL_SIZE_RESET_COMMAND_HEX"
+        )
+        return [size_on + self._encode_text(row) + size_off for row in detail_rows]
 
     def _encode_mixed_lines(self, lines: List[Any]) -> bytes:
         encoded_lines: List[bytes] = []

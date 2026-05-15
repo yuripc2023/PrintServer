@@ -1,0 +1,54 @@
+[api]
+company = "1"
+order_status = "Registrado"
+auth_mode = "basic"
+token_header = "Authorization"
+token_prefix = "Bearer"
+timeout_seconds = 30
+verify_tls = true
+query_params = {}
+headers = {}
+printed_url_template = ""
+printed_method = "PATCH"
+
+[websocket]
+url = ""
+restaurant_id = ""
+verify_tls = true
+connect_timeout_seconds = 30
+ping_interval_seconds = 20
+ping_timeout_seconds = 20
+reconnect_delay_seconds = 5
+event_types = ["order.created", "order.updated"]
+sync_pending_on_connect = true
+
+[service]
+error_sleep_seconds = 30
+log_backup_count = 7
+poll_seconds = 10
+idle_sleep_seconds = 10
+
+[print]
+copies = 1
+precuenta_printer_name = "CBX-POS808"
+precuenta_copies = 1
+encoding = "cp850"
+codepage_command_hex = "1B7402"
+document_title = "TicketProduccion"
+feed_lines = 4
+highlight_command_hex = "1D2111"
+highlight_reset_command_hex = "1D2100"
+detail_size_command_hex = "1D2110"
+detail_size_reset_command_hex = "1D2100"
+cut_enabled = true
+cut_command_hex = "1D5600"
+pre_cut_feed_lines = 3
+after_job_sleep_ms = 300
+combine_ticket_and_cut = true
+beep_enabled = true
+beep_command_hex = "1B420203,07"
+beep_position = "before_cut"
+reprint_when_not_confirmed = false
+
+[printers]
+map = { "COCINA" = "CBX-POS808", "BARRA" = "CBX-POS808", "PARRILLA" = "CBX-POS808", "PRECUENTA" = "CBX-POS808" }
