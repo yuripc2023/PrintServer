@@ -17,6 +17,15 @@ function Test-IsAdministrator {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Invoke-ServiceCommand {
+    param([string[]]$Arguments)
+
+    & $PythonExe .\print_server_service.py @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Fallo el comando: $PythonExe .\print_server_service.py $($Arguments -join ' ')"
+    }
+}
+
 if (-not (Test-IsAdministrator)) {
     throw "Este script debe ejecutarse como Administrador."
 }
@@ -43,19 +52,19 @@ if ($null -ne $existingService) {
 
     if ($existingService.Status -ne "Stopped") {
         Write-Step "Deteniendo servicio"
-        & $PythonExe .\print_server_service.py stop --wait 30
+        Invoke-ServiceCommand @("stop", "--wait", "30")
     }
 
     Write-Step "Eliminando instalacion anterior"
-    & $PythonExe .\print_server_service.py remove
+    Invoke-ServiceCommand @("remove")
     Start-Sleep -Seconds 2
 }
 
 Write-Step "Instalando servicio"
-& $PythonExe .\print_server_service.py install --startup auto
+Invoke-ServiceCommand @("--startup", "auto", "install")
 
 Write-Step "Iniciando servicio"
-& $PythonExe .\print_server_service.py start --wait 30
+Invoke-ServiceCommand @("start", "--wait", "30")
 
 Write-Step "Estado final del servicio"
 Get-Service -Name $ServiceName | Format-Table -AutoSize
