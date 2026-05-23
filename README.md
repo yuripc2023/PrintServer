@@ -26,13 +26,13 @@ pip install -r requirements.txt
 3. Completar API y credenciales en `.env`:
 
 - `API_ORDERS_URL`: endpoint REST de pedidos.
+- `COMPANY`: id de empresa/restaurante a consultar.
 - `API_USERNAME` y `API_PASSWORD` para autenticacion basic.
 - `API_TOKEN` para autenticacion bearer/token.
 - `PRODUCTION_PRINT_COPIES`: copias para centros de produccion como cocina, barra o parrilla. No afecta la precuenta.
 
 4. Ajustar configuracion en `settings.toml`:
 
-- `[api].company`: id de empresa a consultar.
 - `[api].order_status`: estado a consultar. Por defecto `Registrado`.
 - `[api].auth_mode`: `basic`, `bearer`, `token` o `none`.
 - `[websocket].url`: canal WebSocket de pedidos. Si se deja vacio, se construye como `wss://<host>/ws/restaurants/<company>/tables/`.
@@ -160,7 +160,7 @@ powershell -ExecutionPolicy Bypass -File .\install_or_update_service.ps1 -Python
 - El log rota diariamente y conserva `[service].log_backup_count` archivos historicos.
 - La impresion ya no depende de un `GET` ciclico; ahora se activa por eventos WebSocket.
 - Si Windows entra en suspension o la red cae, el servicio reintenta el WebSocket y puede hacer una sincronizacion REST de respaldo al reconectar.
-- Si `[websocket].url` no esta definido, el servicio construye la ruta usando el host de `[api].orders_url` y `[api].company`.
+- Si `[websocket].url` no esta definido, el servicio construye la ruta usando el host de `API_ORDERS_URL` y `COMPANY`.
 - El servicio imprime un ticket por pedido y por centro de produccion.
 - Si `StatusInvoice` llega como `precuenta`, el servicio imprime una precuenta con el mismo JSON del evento y luego actualiza `StatusInvoice` a `-` para no repetirla.
 - Si un detalle ya viene con `Printed=true`, no se vuelve a imprimir.

@@ -341,7 +341,7 @@ class Config:
     def __init__(self) -> None:
         self.settings = load_settings()
         self.orders_url = get_required_config_value(self.settings, ("api", "orders_url"), "API_ORDERS_URL")
-        self.company = str(get_config_value(self.settings, ("api", "company"), "Company", "")).strip()
+        self.company = str(get_config_value(self.settings, ("api", "company"), "COMPANY", os.getenv("Company", ""))).strip()
         self.order_status = str(
             get_config_value(self.settings, ("api", "order_status"), "ORDER_STATUS", "Registrado")
         ).strip()
@@ -487,7 +487,7 @@ class Config:
         if not self.printer_map:
             raise ValueError("printers.map en settings.toml es obligatorio y debe mapear centros a impresoras")
         if not self.websocket_url:
-            raise ValueError("websocket.url es obligatorio o debe poder derivarse desde api.orders_url y api.company")
+            raise ValueError("websocket.url es obligatorio o debe poder derivarse desde API_ORDERS_URL y COMPANY")
 
     def build_orders_query_params(self) -> Dict[str, Any]:
         params = dict(self.query_params)
