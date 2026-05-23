@@ -29,7 +29,6 @@ idle_sleep_seconds = 10
 
 [print]
 copies = 1
-precuenta_printer_name = "CBX-POS808"
 precuenta_copies = 1
 encoding = "cp850"
 codepage_command_hex = "1B7402"
@@ -54,6 +53,3 @@ beep_enabled = true
 beep_command_hex = "1B420203,07"
 beep_position = "before_cut"
 reprint_when_not_confirmed = false
-
-[printers]
-map = { "COCINA" = "CBX-POS808", "BARRA" = "CBX-POS808", "PARRILLA" = "CBX-POS808", "PRECUENTA" = "CBX-POS808" }
