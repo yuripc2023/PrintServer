@@ -12,6 +12,7 @@ import tomllib
 import unicodedata
 from collections import defaultdict
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from logging.handlers import TimedRotatingFileHandler
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -25,7 +26,7 @@ from requests.auth import HTTPBasicAuth
 from websocket import WebSocketConnectionClosedException, WebSocketTimeoutException, create_connection
 
 
-SCRIPT_VERSION = "1.0.2"
+SCRIPT_VERSION = "1.0.3"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 SETTINGS_PATH = os.path.join(BASE_DIR, "settings.toml")
@@ -706,7 +707,7 @@ class TicketPrinter:
         workspace = order.get("WorkSpace") or ""
         space = order.get("Space") or ""
         observations = order.get("Observations") or ""
-        created_at = order.get("Hour") or order.get("Created") or ""
+        created_at = order.get("Updated") or order.get("Hour") or order.get("Created") or ""
         header_lines = [
             "=" * TICKET_WIDTH,
             f"CENTRO DE PRODUCCIÓN: {center}".center(TICKET_WIDTH),
@@ -752,8 +753,23 @@ class TicketPrinter:
         space = order.get("Space") or ""
         observations = order.get("Observations") or ""
         created_at = order.get("Hour") or order.get("Created") or ""
-        total = order.get("Total") or "0.00"
+        details = self._get_precuenta_details(order)
+        total = self._sum_precuenta_total(details)
         seller_name = self._extract_precuenta_seller_name(cashier)
+        included_ids = [detail.get("id") for detail in details]
+        included_id_set = set(included_ids)
+        excluded_ids = [
+            detail.get("id")
+            for detail in order.get("Details") or []
+            if detail.get("id") not in included_id_set
+        ]
+        logging.info(
+            "Precuenta calculada. Pedido=%s Incluidos=%s Excluidos=%s TotalCalculado=%s",
+            order.get("id"),
+            included_ids,
+            excluded_ids,
+            self._format_money(total),
+        )
 
         lines: List[Any] = [
             "=" * TICKET_WIDTH,
@@ -773,7 +789,7 @@ class TicketPrinter:
         lines.append(self._format_precuenta_header())
         lines.append("=" * TICKET_WIDTH)
 
-        for detail in order.get("Details") or []:
+        for detail in details:
             quantity = self._format_quantity(detail.get("Quantity")) or "0"
             product = (detail.get("Product") or "").strip()
             price = self._format_money(detail.get("Price"))
@@ -796,8 +812,42 @@ class TicketPrinter:
         )
         for chunk in textwrap.wrap(disclaimer, width=TICKET_WIDTH, break_long_words=False):
             lines.append(chunk.center(TICKET_WIDTH))
+        lines.append(f"Sayri V {SCRIPT_VERSION}".center(TICKET_WIDTH))
         lines.extend([""] * self.config.cut_lines)
         return self._build_codepage_bytes() + self._encode_mixed_lines(lines)
+
+    @staticmethod
+    def _get_precuenta_details(order: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return [
+            detail
+            for detail in order.get("Details") or []
+            if not TicketPrinter._is_truthy_flag(detail.get("Taken"))
+            and not TicketPrinter._is_truthy_flag(detail.get("Invoiced"))
+        ]
+
+    @staticmethod
+    def _is_truthy_flag(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, (int, float)):
+            return value != 0
+        return str(value).strip().lower() in {"1", "true", "yes", "si", "sí"}
+
+    @classmethod
+    def _sum_precuenta_total(cls, details: List[Dict[str, Any]]) -> Decimal:
+        total = Decimal("0.00")
+        for detail in details:
+            try:
+                total += Decimal(str(detail.get("Amount") or "0.00"))
+            except InvalidOperation:
+                logging.warning(
+                    "Importe invalido en detalle de precuenta. Detalle=%s Amount=%r",
+                    detail.get("id"),
+                    detail.get("Amount"),
+                )
+        return total
 
     def _resolve_precuenta_printer_name(self, order: Dict[str, Any]) -> str:
         if self.config.precuenta_printer_name:
